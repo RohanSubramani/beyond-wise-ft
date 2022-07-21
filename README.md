@@ -1,6 +1,8 @@
 # Robust fine-tuning of zero-shot models
 
-Hi I'm Rohan.
+This README transferred over from the earlier repo. This should be updated at some point.
+
+
 
 This repository contains code for the paper [Robust fine-tuning of zero-shot models](https://arxiv.org/abs/2109.01903) by Mitchell Wortsman*, Gabriel Ilharco*,  Jong Wook Kim, Mike Li, Simon Kornblith, Rebecca Roelofs, Raphael Gontijo-Lopes, Hannaneh Hajishirzi, Ali Farhadi, Hongseok Namkoong, Ludwig Schmidt.
 
