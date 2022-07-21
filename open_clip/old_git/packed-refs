@@ -1,0 +1,19 @@
+# pack-refs with: peeled fully-peeled sorted 
+d0824008d0447cf49392514aad8e49164df775d4 refs/remotes/origin/b16_plus_and_models
+d719ed9c4d79a713907df63b9ca43b48031e12da refs/remotes/origin/grad_checkpointing
+d5b641b05332d0a6859d1a6f3012bc3f7b07cc45 refs/remotes/origin/locked_image_tower
+6382b1017fdd41900841fe00f24ba469eb66b975 refs/remotes/origin/main
+fdf513e9d7d81eef3ffa60696f04754b9222d124 refs/remotes/origin/mitchellnw-patch-1
+f59735cde5aefc741baac23a40c3b5ae6ccc2057 refs/remotes/origin/nothrow_tariterator
+9078293a67501d9489b22b8ee5b6c10b061a6b54 refs/remotes/origin/resize_resample_more
+c1ecfe911aafa3d7adfb46696f452f3aee8cce48 refs/remotes/origin/rw-refactor
+f2f04d873471d823b69d98db64e0fbde4b1c665b refs/remotes/origin/split_reqs_v1.0
+ae6e7217860a5b288daa3ebd809accd7071b6e8c refs/remotes/origin/trace_jit_support
+91f6cce16b7bee90b3b5d38ca305b5b3b67cc200 refs/tags/v0.1
+db7504f070b4e76e6c8578ee7b73596267083a19 refs/tags/v0.2-weights
+b7ce3897a29a7fed05189cf275aac26740b0aa9f refs/tags/v0.2.1
+bf8abe202ff84ae9e5aa37389f744c8762a7a31f refs/tags/v1.0.1
+684bae63e1f49414f6992ca857ead0c834054915 refs/tags/v1.1.1
+535069d4ac670da5dc7b5d8758313e7ae679d619 refs/tags/v1.2.0
+d9ee4aa0431b9ea5c99c8617e9b3e0f3f12c458f refs/tags/v1.2.1
+73706a147536233605b497541b3d32032e07a80d refs/tags/v1.3.0
