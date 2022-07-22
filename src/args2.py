@@ -25,6 +25,12 @@ def parse_arguments2():
         help="Dataset to train classifier on, after adding logits from models to be ensembled",
     )
     parser.add_argument(
+        "--model_ckpts",
+        default=None,
+        type=lambda x: x.split(","),
+        help='Ckpt files for models being ensembled. Split by comma, e.g. "$pathStart$model1","$pathStart$model2" if pathStart=./models/wiseft/ViTB32_20/, model1=checkpoint_1.pt, model2=checkpoint_10.pt',
+    )
+    parser.add_argument(
         "--template",
         type=str,
         default=None,
@@ -79,7 +85,7 @@ def parse_arguments2():
         "--load",
         type=lambda x: x.split(","),
         default=None,
-        help="Optionally load _classifiers_, e.g. a zero shot classifier or probe or ensemble both.",
+        help="The alpha model ckpt, if loading one.",
     )
     parser.add_argument(
         "--save",

@@ -29,7 +29,7 @@ def finetune(args):
         print('Fine-tuning a linear classifier')
         model = image_classifier.classification_head
         input_key = 'features'
-        preprocess_fn = image_classifier.train_preprocess # val_preprocess? Idk why it started with that
+        preprocess_fn = image_classifier.val_preprocess # not train_preprocess, because data aug isn't needed if learned features are fixed
         image_enc = image_classifier.image_encoder
         # print_every = 1000
     else:
