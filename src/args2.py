@@ -20,9 +20,9 @@ def parse_arguments2():
              "for zero shot.",
     )
     parser.add_argument(
-        "--original-dataset",
+        "--train-dataset",
         default=None,
-        help="Dataset to train classifier on, after adding logits from models to be ensembled",
+        help="Dataset to train alpha model on, after adding logits from models to be ensembled",
     )
     parser.add_argument(
         "--model_ckpts",
@@ -72,6 +72,12 @@ def parse_arguments2():
         help="Weight decay"
     )
     parser.add_argument(
+        "--ls",
+        type=float,
+        default=0.0,
+        help="Label smoothing."
+    )
+    parser.add_argument(
         "--warmup_length",
         type=int,
         default=500,
@@ -98,6 +104,12 @@ def parse_arguments2():
         default=False,
         action="store_true",
         help="Whether or not to freeze the image encoder. Only relevant for fine-tuning."
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Directory for caching features and encoder",
     )
     parser.add_argument(
         "--data_augmentation",

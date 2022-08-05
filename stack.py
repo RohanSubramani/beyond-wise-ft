@@ -1,20 +1,39 @@
+import torch
+import wandb
+import time
+import sys
+import os
+import json
+
 from src.args2 import parse_arguments2
-from src.models.modeling import * # Includes ImageClassifier, ResNet
+from src.models.modeling import * # Includes ImageClassifier, ResNet, ClassificationHead2
 import src.datasets as datasets
+from src.datasets.common import get_dataloader
 from open_clip.src.open_clip.transform import image_transform
+from src.datasets.common import FeatureDataset,maybe_dictionarize
+from torch.utils.data import TensorDataset, DataLoader
+from src.models.zeroshot import get_zeroshot_classifier
+from src.models.utils import cosine_lr, LabelSmoothing
+from src.models.eval import evaluate
 
-def trainStackingClassifier(args):
-    model, input_key, preprocess_fn, image_enc = getStackingClassifier(args.model_class,args.model_details)
-    dataset = getDataset(args.original_dataset,args.model_ckpts,preprocess_fn)
-    train(model,dataset,args)
+
+def trainAlphaModel(args):
+    num_models = len(args.model_ckpts)
+    model, alphaModel, preprocess_fn, input_key = getAlphaModel(args,num_models)  # args.model_class,args.model_details,
+    data_loader = getDataset(args.train_dataset,args.model_ckpts,preprocess_fn,args)
+    train(model,alphaModel,data_loader,input_key,args)
 
 
-def getStackingClassifier(model_class,model_details):
+def getAlphaModel(args,num_models):  # model_class,model_details,
     if args.load is not None:
-        image_classifier = ImageClassifier.load(args.load)  # args.load is here for the alpha model ckpt
+        image_classifier = ImageClassifier2.load(args.load)  # args.load is here for the alpha model ckpt
 
         if args.freeze_encoder:
             print('Fine-tuning a linear classifier')
+            image_encoder = ImageEncoder(args, keep_lang=True)
+            classification_head = get_zeroshot_classifier(args, image_encoder.model)
+            image_classifier.classification_head = ClassificationHead2(normalize=True, weights=classification_head.weight, output_size=num_models, biases=None) 
+            # .image_encoder.model
             model = image_classifier.classification_head
             input_key = 'features'
             preprocess_fn = image_classifier.val_preprocess # not train_preprocess, because data aug isn't needed if learned features are fixed
@@ -27,24 +46,150 @@ def getStackingClassifier(model_class,model_details):
             image_enc = None
             image_classifier.process_images = True
 
-        return model, input_key, preprocess_fn, image_enc
+        return model, image_classifier, preprocess_fn, input_key
 
 
-def getDataset(original_dataset,model_ckpts,preprocess_fn):
-    dataset_class = getattr(datasets, original_dataset)
+def getDataset(train_dataset,model_ckpts,preprocess_fn,args):
+    dataset_class = getattr(datasets, train_dataset)
     dataset = dataset_class(
         preprocess_fn,
         location=args.data_location,
         batch_size=args.batch_size
     )
-    # TODO Add get_dataloader here, etc.
     models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
-    all_all_logits = []
-    # all_logits = torch.tensor([model(input) for model in models])
+    # print(f"dir(dataset):\n{dir(dataset)}")
+    
+    is_train=True
 
-def train(stackingClassifier,dataset):
-    pass
+    logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device).data['features'] for i in range(len(models))]  # Not actually using image encoders to get features, using models to get logits
+    print(f"logit_datasets.shape={logit_datasets[0].shape}")
+    # with open('logit_datasets.txt','w') as file:
+    #     file.write(json.dumps(list(logit_datasets)))   # This is like, 1000 x 1.4 million? Don't want to write anything this huge.
+    all_logits_dataset = torch.tensor([[dataset[i] for dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32) # torch.from_numpy(ndarray)
+
+    base_data_loader = torch.utils.data.DataLoader(dataset, batch_size=len(dataset))
+    dataiter = iter(base_data_loader)
+    images,labels = dataiter.next()
+    finalDataset = TensorDataset(images,all_logits_dataset,labels)
+    data_loader = DataLoader(finalDataset, batch_size=args.batch_size, shuffle=is_train)
+    
+    return data_loader
+
+
+def train(model,alphaModel,data_loader,input_key,args):
+    
+    model = model.cuda()
+    devices = list(range(torch.cuda.device_count()))
+    print('Using devices', devices)
+    model = torch.nn.DataParallel(model, device_ids=devices)
+    model.train()
+
+    num_batches = len(data_loader)
+
+    if args.ls > 0:
+        loss_fn = LabelSmoothing(args.ls)
+    else:
+        loss_fn = torch.nn.CrossEntropyLoss()
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.wd)
+
+    scheduler = cosine_lr(optimizer, args.lr, args.warmup_length, args.epochs * num_batches)
+
+    wandb.init(project="stacking-experiments",entity="rohansubramani",name=args.save)
+    # # Name is now ckptNum b/c there are too many args, and you can check config in wandb, or ckpt_and_run_details.txt.
+    wandb.config.update(args)
+    wandb.config.net_name = "CLIP-ViT-B-32"
+    wandb.watch(model)
+
+    args.current_epoch = -1
+    t0 = time.time()
+    eval_results = evaluate(alphaModel, args)
+    t1 = time.time()
+    eval_time = t1-t0
+    wandb.log({dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets})
+
+    for epoch in range(args.epochs):
+        model = model.cuda()
+        model.train()
+        
+        args.current_epoch = epoch
+
+        if epoch == 0:
+            print_every = (len(data_loader)*(args.epochs) // 25)+1 if eval_time<100 else (len(data_loader)*(args.epochs) // 10)+1
+            if print_every < 75:
+                print_every = 75  # Don't want to be evaluating too often in a small run
+            print(f"Evaluates every {print_every} batches.")
+            j=0 # Keeps track of total batches completed
+
+        for i, batch in enumerate(data_loader):
+            start_time = time.time()
+            
+            step = i + epoch * num_batches
+            scheduler(step)
+            optimizer.zero_grad()
+
+            batch = maybe_dictionarize2(batch)
+            inputs = [batch[key].cuda() for key in batch.keys()[:-1]]
+            labels = batch['labels'].cuda()
+            data_time = time.time() - start_time
+            
+            logits = model(*inputs) # This line caused stopping the first time I tried on gpu 5
+
+            loss = loss_fn(logits, labels)
+
+            loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(params, 1.0)
+
+            optimizer.step()
+            batch_time = time.time() - start_time
+
+            percent_complete = 100 * i / len(data_loader)
+            details = f"\rTrain Epoch: {epoch+1}/{args.epochs} [{percent_complete:.0f}% {i}/{len(data_loader)}]\t"+\
+                      f"Loss: {loss.item():.6f}\tData (t) {data_time:.3f}\tBatch (t) {batch_time:.3f}"
+            
+            sys.stdout.write(details)
+            
+            if (j+1) % print_every == 0:
+                print("")
+                eval_results = evaluate(image_classifier, args)
+                wandb.log({dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets})
+            
+            j += 1  # Unlike i, j doesn't reset at the end of each epoch
+        
+        if args.freeze_encoder:
+            image_classifier = ImageClassifier2(image_classifier.image_encoder, model.module)
+        else:
+            image_classifier = model.module
+
+        # Saving model
+        if args.save is not None and (epoch%((args.epochs//5)+1)==0 or epoch+1 == args.epochs):
+            os.makedirs(args.save, exist_ok=True)
+            model_path = os.path.join(args.save, f'checkpoint_{epoch+1}.pt')
+            image_classifier.save(model_path)
+            print('\nSaved model to', model_path)
+            optim_path = os.path.join(args.save, f'optim_{epoch+1}.pt')
+            torch.save(optimizer.state_dict(), optim_path)
+    
+    print("")
+    eval_results = evaluate(image_classifier, args)
+    wandb.log({dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets})
+    
+    if args.save is not None:
+        return model_path
+
+def maybe_dictionarize2(batch):
+    if isinstance(batch, dict):
+        return batch
+
+    if len(batch) == 3:
+        batch = {'images': batch[0], 'all_logits': batch[1], 'labels': batch[2]}
+    else:
+        raise ValueError(f'Unexpected number of elements: {len(batch)}. Expected 3.')
+
+    return batch
 
 if __name__ == "__main__":
     args = parse_arguments2()
-    trainStackingClassifier(args)
+    trainAlphaModel(args)

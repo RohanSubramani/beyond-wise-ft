@@ -4,6 +4,7 @@ import json
 import glob
 import collections
 import random
+import time
 
 import numpy as np
 
@@ -72,6 +73,7 @@ def get_features_helper(image_encoder, dataloader, device):
         for batch in tqdm(dataloader):
             batch = maybe_dictionarize(batch)
             features = image_encoder(batch['images'].cuda())
+            # print(features.shape) # Want 512-D for features, want number of classes (ImageNet ==> 1000) as dimension if producing logits
 
             all_data['features'].append(features.cpu())
 
@@ -94,10 +96,12 @@ def get_features_helper(image_encoder, dataloader, device):
 def get_features(is_train, image_encoder, dataset, device):
     split = 'train' if is_train else 'val'
     dname = type(dataset).__name__
-    if image_encoder.cache_dir is not None:
-        cache_dir = f'{image_encoder.cache_dir}/{dname}/{split}'
+    if image_encoder.__class__.__name__ is 'ImageClassifier':
+        image_encoder2 = image_encoder.image_encoder   # Used when getting logits using models instead of features using image encoders
+    if image_encoder2.cache_dir is not None:
+        cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}'
         cached_files = glob.glob(f'{cache_dir}/*')
-    if image_encoder.cache_dir is not None and len(cached_files) > 0:
+    if image_encoder2.cache_dir is not None and len(cached_files) > 0:
         print(f'Getting features from {cache_dir}')
         data = {}
         for cached_file in cached_files:
@@ -106,8 +110,9 @@ def get_features(is_train, image_encoder, dataset, device):
     else:
         print(f'Did not find cached features at {cache_dir}. Building from scratch.')
         loader = dataset.train_loader if is_train else dataset.test_loader
-        data = get_features_helper(image_encoder, loader, device)
-        if image_encoder.cache_dir is None:
+        data = get_features_helper(image_encoder, loader, device)  # This is image_encoder, NOT image_encoder2. If a full model is passed
+        # in instead of just an image encoder, this saves logits, not features.
+        if image_encoder2.cache_dir is None:
             print('Not caching because no cache directory was passed.')
         else:
             os.makedirs(cache_dir, exist_ok=True)
