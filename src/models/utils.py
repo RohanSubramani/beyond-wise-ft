@@ -70,10 +70,17 @@ def fisher_load(save_path, device=None):
 
 
 def get_logits(inputs, classifier):
+    print(classifier.__class__.__name__)
     assert callable(classifier)
     if hasattr(classifier, 'to'):
         classifier = classifier.to(inputs.device)
     return classifier(inputs)
+
+def get_logits2(classifier, *inputs):
+    assert callable(classifier)
+    if hasattr(classifier, 'to'):
+        classifier = classifier.to(inputs[0].device)
+    return classifier(*inputs)
 
 
 def get_probs(inputs, classifier):

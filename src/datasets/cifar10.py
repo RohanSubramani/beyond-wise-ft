@@ -120,3 +120,29 @@ class CIFAR102:
         )
 
         self.classnames = cifar_classnames
+
+class DeterministicCIFAR10:  # Has shuffle = False even for trainloader, important for logit ensembling
+    def __init__(self, preprocess,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None):
+
+
+        self.train_dataset = PyTorchCIFAR10(
+            root=location, download=True, train=True, transform=preprocess
+        )
+
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        self.test_dataset = PyTorchCIFAR10(
+            root=location, download=True, train=False, transform=preprocess
+        )
+
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        self.classnames = self.test_dataset.classes

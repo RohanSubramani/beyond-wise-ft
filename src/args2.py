@@ -117,6 +117,13 @@ def parse_arguments2():
         default=1,
         help="A few options for data augmentation",
     )
+    parser.add_argument(
+        "--subset_proportion",
+        "-sp",
+        type=float,
+        default=1.0,
+        help="Proportion of train dataset to use."
+    )
     parsed_args = parser.parse_args()
     parsed_args.device = "cuda" if torch.cuda.is_available() else "cpu"
     

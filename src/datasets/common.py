@@ -5,6 +5,7 @@ import glob
 import collections
 import random
 import time
+import pickle
 
 import numpy as np
 
@@ -93,38 +94,52 @@ def get_features_helper(image_encoder, dataloader, device):
     return all_data
 
 
-def get_features(is_train, image_encoder, dataset, device):
+def get_features(is_train, image_encoder, dataset, device, model_name=None):
     split = 'train' if is_train else 'val'
     dname = type(dataset).__name__
     if image_encoder.__class__.__name__ is 'ImageClassifier':
         image_encoder2 = image_encoder.image_encoder   # Used when getting logits using models instead of features using image encoders
+    else:
+        image_encoder2 = image_encoder
     if image_encoder2.cache_dir is not None:
-        cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}'
+        if model_name is None:
+            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}'
+        else:
+            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}/{model_name}' # Different models don't load from each other's logits
         cached_files = glob.glob(f'{cache_dir}/*')
     if image_encoder2.cache_dir is not None and len(cached_files) > 0:
         print(f'Getting features from {cache_dir}')
         data = {}
         for cached_file in cached_files:
             name = os.path.splitext(os.path.basename(cached_file))[0]
-            data[name] = torch.load(cached_file)
+            data[name] = torch.load(cached_file) # torch.load(cached_file)
     else:
         print(f'Did not find cached features at {cache_dir}. Building from scratch.')
         loader = dataset.train_loader if is_train else dataset.test_loader
-        data = get_features_helper(image_encoder, loader, device)  # This is image_encoder, NOT image_encoder2. If a full model is passed
-        # in instead of just an image encoder, this saves logits, not features.
+        # with open(f'test.pt','wb') as file:
+        #     pickle.dump([0.1]*int(1.3e9), file, protocol=4) # Allows for larger dumps
+        # print("Large data-writing test complete.")
+        data = get_features_helper(image_encoder, loader, device)  # This is image_encoder, NOT image_encoder2. If a full
+        # model is passed in instead of just an image encoder, this saves logits, not features.
         if image_encoder2.cache_dir is None:
             print('Not caching because no cache directory was passed.')
         else:
             os.makedirs(cache_dir, exist_ok=True)
             print(f'Caching data at {cache_dir}')
             for name, val in data.items():
-                torch.save(val, f'{cache_dir}/{name}.pt')
+                if name=='features' and model_name is not None:   # model_name is not None <==> this is for logit ensembling
+                    torch.save(val, f'{cache_dir}/logits.pt',pickle_protocol=4)
+                else:
+                    torch.save(val, f'{cache_dir}/{name}.pt',pickle_protocol=4) # Allows for larger dumps
+                # with open(f'{cache_dir}/{name}.pt','wb') as file:
+                #     pickle.dump(val, file, protocol=4) # Allows for larger dumps
+                    
     return data
 
 
 class FeatureDataset(Dataset):
-    def __init__(self, is_train, image_encoder, dataset, device):
-        self.data = get_features(is_train, image_encoder, dataset, device)
+    def __init__(self, is_train, image_encoder, dataset, device, model_name=None):
+        self.data = get_features(is_train, image_encoder, dataset, device, model_name)
 
     def __len__(self):
         return len(self.data['features'])

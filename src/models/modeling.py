@@ -125,10 +125,7 @@ class ImageClassifier2(torch.nn.Module):  # Forward function maps to a list of a
     def forward(self, image, all_logits):
         if self.process_images:
             image = self.image_encoder(image)
-        out = self.classification_head(image)
-        out = nn.Softmax(dim=0)(out)
-        out = out @ all_logits  # Weighted average of logits from the models being ensembled
-        # out = nn.Softmax(dim=0)(out)  # Loss function is applied to logits
+        out = self.classification_head(image,all_logits)
         return out
 
     def save(self, filename):
@@ -152,10 +149,14 @@ class ClassificationHead2(torch.nn.Linear):
         else:
             self.bias = torch.nn.Parameter(torch.zeros_like(self.bias))
 
-    def forward(self, inputs):
+    def forward(self, inputs, all_logits):
         if self.normalize:
-            inputs = inputs / inputs.norm(dim=-1, keepdim=True)
-        return super().forward(inputs)
+            inputs = inputs / inputs.norm(dim=-1, keepdim=True) 
+        out = super().forward(inputs)
+        out = nn.Softmax(dim=0)(out)
+        out = out @ all_logits  # Weighted average of logits from the models being ensembled
+        # out = nn.Softmax(dim=0)(out)  # Loss function is applied to logits
+        return out
 
     def save(self, filename):
         print(f'Saving classification head to {filename}')

@@ -139,3 +139,45 @@ for k in ks:
         "k": lambda self, num_samples=k: num_samples,
     })
     globals()[cls_name] = dyn_cls
+
+class DeterministicImageNet(ImageNet):
+    def __init__(self,
+                 preprocess,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=32,
+                 num_workers=32,
+                 classnames='openai',
+                 subset_proportion=1.0):
+        self.preprocess = preprocess
+        self.location = location
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.classnames = get_classnames(classnames)
+
+        self.populate_train(subset_proportion)
+        self.populate_test()
+    
+    def populate_train(self,subset_proportion):
+        traindir = os.path.join(self.location, self.name(), 'train')
+        self.train_dataset = ImageFolderWithPaths(
+            traindir,
+            transform=self.preprocess)
+        sampler = self.get_train_sampler()
+        kwargs = {'shuffle' : False} if sampler is None else {}
+        if subset_proportion == 1.0:
+            train_subset = self.train_dataset
+            batch_size = len(self.train_dataset)
+        else:
+            assert subset_proportion < 1.0 and subset_proportion > 0.0, "Invalid subset proportion, should be between 0.0 and 1.0"
+            import random
+            sample = random.sample(list(range(len(self.train_dataset))),int(subset_proportion*len(self.train_dataset)))
+            # This is a random sample, but it doesn't shuffle anything.
+            train_subset = torch.utils.data.Subset(self.train_dataset, sample)
+            batch_size = len(sample)
+        self.train_loader = torch.utils.data.DataLoader(
+            train_subset,
+            sampler=sampler,
+            batch_size=batch_size,
+            num_workers=self.num_workers,
+            **kwargs,
+        )
