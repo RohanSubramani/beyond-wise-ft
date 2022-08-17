@@ -1,6 +1,7 @@
 import os
 
 import torch
+from torch.utils.data import Dataset
 import pickle
 from tqdm import tqdm
 import math
@@ -105,3 +106,26 @@ class LabelSmoothing(torch.nn.Module):
         smooth_loss = -logprobs.mean(dim=-1)
         loss = self.confidence * nll_loss + self.smoothing * smooth_loss
         return loss.mean()
+
+# import cv2
+# class LogitDataset(Dataset):
+#     def __init__(self, image_paths, all_logits, labels, transform=False):
+#         self.image_paths = image_paths
+#         self.all_logits = all_logits
+#         self.labels = labels
+#         self.transform = transform
+        
+#     def __len__(self):
+#         return len(self.image_paths)
+
+#     def __getitem__(self, idx):
+#         image_filepath = self.image_paths[idx]
+#         image = cv2.imread(image_filepath)                      # FIXME
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)          # FIXME
+        
+#         all_logits = self.all_logits[idx]
+#         label = self.labels[idx]
+#         if self.transform is not None:
+#             image = self.transform(image=image)["image"]
+        
+#         return image, all_logits, label

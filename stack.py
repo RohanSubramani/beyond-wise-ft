@@ -31,19 +31,21 @@ def getAlphaModel(args,num_models):  # model_class,model_details
 
         if args.freeze_encoder:
             print('Fine-tuning a linear classifier')
-            image_encoder = ImageEncoder(args, keep_lang=True)
-            classification_head = get_zeroshot_classifier(args, image_encoder.model)
-            image_classifier.classification_head = ClassificationHead2(normalize=True, weights=classification_head.weight, output_size=num_models, biases=None) 
+            # image_encoder = ImageEncoder(args, keep_lang=True)
+            # classification_head = get_zeroshot_classifier(args, image_encoder.model)
+            image_classifier.classification_head = ClassificationHead2(normalize=True, input_size=512, output_size=num_models, biases=None) 
             # .image_encoder.model
             model = image_classifier.classification_head
             # input_key = 'features'
             preprocess_fn = image_classifier.val_preprocess # not train_preprocess, because data aug isn't needed if learned features are fixed
-            image_enc = image_classifier.image_encoder
+            # image_enc = image_classifier.image_encoder
         else:
             print('Fine-tuning end-to-end')
             model = image_classifier
             # input_key = 'images'
             preprocess_fn = image_classifier.train_preprocess
+            cont = int(input("Are you sure that using train preprocess is ok? This likely includes data aug, which makes it impossible to store logits for all images and ensemble them. 1 for yes, continue. 2 for no, stop."))
+            assert cont == 1, "You chose to stop because train preprocess (and likely data aug) is being used "
             image_enc = None
             image_classifier.process_images = True
 
@@ -51,63 +53,63 @@ def getAlphaModel(args,num_models):  # model_class,model_details
 
 
 def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
+    corr_logits = {'DeterministicCIFAR10':'DeterministicCIFAR10WithLogits','DeterministicImageNet':'DeterministicImageNetWithLogits'}    
     dataset_class = getattr(datasets, train_dataset)
-    # if train_dataset=="DeterministicImageNet":
-    #     dataset = dataset_class(
-    #         preprocess_fn,
-    #         location=args.data_location,
-    #         batch_size=args.batch_size,
-    #         subset_proportion=args.subset_proportion
-    #     )
-    # else:
-    dataset = dataset_class(
-        preprocess_fn,
-        location=args.data_location,
-        batch_size=args.batch_size
-    )
+    logit_dataset_class = getattr(datasets, corr_logits[train_dataset])
+    # t0 = time.time()
+    if args.subset_proportion < 1.0:
+        dataset = dataset_class(
+            preprocess_fn,
+            location=args.data_location,
+            batch_size=args.batch_size,
+            subset_proportion=args.subset_proportion
+        )
+    else:
+        dataset = dataset_class(
+            preprocess_fn,
+            location=args.data_location,
+            batch_size=args.batch_size
+        )
+    # t1=time.time()
+    # print(f"Time to get dataset = {t1-t0}")
     # print(f"model_ckpts={model_ckpts}")
     # time.sleep(5)
     models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
     model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
     # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
     # print(f"dir(dataset):\n{dir(dataset)}")
-
+    print(dataset.batch_size)
     logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device, model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using models to get logits
     # print(f"logit_datasets[0].shape={logit_datasets[0].shape}")
-    t0 = time.time()
+    # t0 = time.time()
+    print(f"Producing all_logits_dataset, may take a few minutes for large datasets (~4 minutes for ImageNet) (mostly for converting to tensor).")
     all_logits_dataset = torch.tensor([[dataset[i] for dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32) # torch.from_numpy(ndarray)
 
     # print(f"len(all_logits_dataset)={len(all_logits_dataset)}")
     # time.sleep(10)
     # print(all_logits_dataset)
     
-    t1=time.time()
-    elapsed = t1-t0
-    elapsed_per=elapsed/(len(logit_datasets)*len(logit_datasets[0]))
-    extrapolated_ImageNet_elapsed = elapsed_per*2*1.3e6
-    fraction=(len(logit_datasets)*len(logit_datasets[0]))/(2*1.3e6)
-    print(f"elapsed={elapsed},elapsed_per={elapsed_per},extrapolated_ImageNet_elapsed={extrapolated_ImageNet_elapsed},fraction={fraction}")
+    # t1=time.time()
+    # elapsed = t1-t0
+    # elapsed_per=elapsed/(len(logit_datasets)*len(logit_datasets[0]))
+    # extrapolated_ImageNet_elapsed = elapsed_per*2*1.3e6
+    # fraction=(len(logit_datasets)*len(logit_datasets[0]))/(2*1.3e6)
+    # print()
+    # print(f"elapsed={elapsed},elapsed_per={elapsed_per},extrapolated_ImageNet_elapsed={extrapolated_ImageNet_elapsed},fraction={fraction}")
 
     # print(f"all_logits_dataset[0].shape={all_logits_dataset[0].shape}")
 
-    split = dataset.train_dataset if is_train else dataset.test_dataset
-    print("1")
+    # split = dataset.train_dataset if is_train else dataset.test_dataset
     # base_data_loader = dataset.train_loader if train_dataset=='DeterministicImageNet' else DataLoader(split, batch_size=len(split))
-    base_data_loader = DataLoader(split, batch_size=len(split))
-    print("2")
-    dataiter = iter(base_data_loader)
-    print("3")
-    print(dir(split))
-    print(f"split.samples[0]={split.samples[0]}")
-    images,labels = torch.tensor([split.samples[i][0] for i in range(len(split.samples))]),torch.tensor(split.targets)
-    print(f"type(split.samples) = {type(split.samples)}, type(split.targets) = {type(split.targets)}")
-    print(f"type(images) = {type(images)}, type(labels) = {type(labels)}")
-    # images,labels = dataiter.next()
-    print("4")
-    finalDataset = TensorDataset(images,all_logits_dataset,labels)
-    print("5")
-    data_loader = DataLoader(finalDataset, batch_size=args.batch_size, shuffle=False) # Don't want to shuffle when logit ensembling
-    print("6")
+    # base_data_loader = DataLoader(split, batch_size=len(split))
+    # dataiter = iter(base_data_loader)
+    # images,labels = [split.samples[i][0] for i in range(len(split.samples))],torch.tensor(split.targets) # dataiter.next()
+    # finalDataset = TensorDataset(images,all_logits_dataset,labels)
+    # finalDataset = {'images': images, 'all_logits': all_logits_dataset, 'labels': labels}
+    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
+        subset_proportion=args.subset_proportion, is_train=is_train)
+    data_loader = finalDataset.train_loader if is_train else finalDataset.test_loader
+    # data_loader = DataLoader(finalDataset, batch_size=args.batch_size, shuffle=False)
     return data_loader
 
 def train(model,alphaModel,data_loader,args): # input_key
@@ -156,7 +158,8 @@ def train(model,alphaModel,data_loader,args): # input_key
             print(f"Evaluates every {print_every} batches.")
             j=0 # Keeps track of total batches completed
 
-        for i, batch in enumerate(data_loader):
+        i=0
+        for batch in data_loader:
             start_time = time.time()
             
             step = i + epoch * num_batches
@@ -164,12 +167,12 @@ def train(model,alphaModel,data_loader,args): # input_key
             optimizer.zero_grad()
 
             batch = maybe_dictionarize2(batch)
-            inputs = [batch[key].cuda() for key in list(batch.keys())[:-1]]
+            inputs = [batch['images'].cuda(), batch['all_logits'].cuda()]
             labels = batch['labels'].cuda()
             data_time = time.time() - start_time
             
             logits = model(*inputs) # This line caused stopping the first time I tried on gpu 5
-
+            
             loss = loss_fn(logits, labels)
 
             loss.backward()
@@ -190,6 +193,7 @@ def train(model,alphaModel,data_loader,args): # input_key
                 eval_results = evaluate2(alphaModel, args.model_ckpts, args)
                 wandb.log({dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets})
             
+            i += 1
             j += 1  # Unlike i, j doesn't reset at the end of each epoch
         
         if args.freeze_encoder:
@@ -219,8 +223,10 @@ def maybe_dictionarize2(batch):
 
     if len(batch) == 3:
         batch = {'images': batch[0], 'all_logits': batch[1], 'labels': batch[2]}
+    if len(batch) == 4:
+        batch = {'images': batch[0], 'all_logits': batch[1], 'labels': batch[2], 'image_paths': batch[3]}
     else:
-        raise ValueError(f'Unexpected number of elements: {len(batch)}. Expected 3.')
+        raise ValueError(f'Unexpected number of elements: {len(batch)}. Expected 3 or 4.')
 
     return batch
 

@@ -138,23 +138,24 @@ class ImageClassifier2(torch.nn.Module):  # Forward function maps to a list of a
         return utils.torch_load(filename)
 
 class ClassificationHead2(torch.nn.Linear):
-    def __init__(self, normalize, weights, output_size, biases=None):
-        _, input_size = weights.shape
-        super().__init__(input_size, output_size)
+    def __init__(self, normalize, input_size, output_size, weights=None, biases=None):
+        super().__init__(input_size, output_size) # Creates self.weight and self.bias
         self.normalize = normalize
         if weights is not None:
             self.weight = torch.nn.Parameter(weights.clone())
         if biases is not None:
             self.bias = torch.nn.Parameter(biases.clone())
-        else:
-            self.bias = torch.nn.Parameter(torch.zeros_like(self.bias))
 
     def forward(self, inputs, all_logits):
         if self.normalize:
             inputs = inputs / inputs.norm(dim=-1, keepdim=True) 
         out = super().forward(inputs)
         out = nn.Softmax(dim=0)(out)
-        out = out @ all_logits  # Weighted average of logits from the models being ensembled
+        # out.shape = torch.Size([batch_size, num_models]), all_logits.shape = torch.Size([batch_size, num_models, num_classes])
+        out = out @ all_logits
+        # out.shape = torch.Size([batch_size, batch_size, num_models])
+        out = torch.transpose(torch.diagonal(out),0,1)  
+        # This gets the correctly weighted logit ensembles - depends on weirdness of the tensor multiplication
         # out = nn.Softmax(dim=0)(out)  # Loss function is applied to logits
         return out
 

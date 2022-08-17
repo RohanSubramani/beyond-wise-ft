@@ -17,7 +17,7 @@
 # python stack.py   \
 #     --train-dataset=$train_dataset  \
 #     --save=$save  \
-#     --epochs=10  \
+#     --epochs=1  \
 #     --lr=3e-3  \
 #     --data_augmentation=1  \
 #     --batch-size=64  \
@@ -51,9 +51,8 @@ model2="finetuned/checkpoint_10.pt"
 
 python stack.py   \
     --train-dataset=$train_dataset  \
-    --subset_proportion=0.001  \
     --save=$save  \
-    --epochs=10  \
+    --epochs=1  \
     --lr=3e-3  \
     --data_augmentation=1  \
     --batch-size=64  \
@@ -64,7 +63,9 @@ python stack.py   \
     --results-db=$results_db  \
     --data-location=/shared/share_mala/data \
     --template=openai_imagenet_template  \
-    --eval-datasets=ImageNet,ImageNetV2,ImageNetR,ImageNetSketch,ImageNetA,ObjectNet \
+    --eval-datasets=$train_dataset \
     --freeze-encoder \
+    # ImageNet,ImageNetV2,ImageNetR,ImageNetSketch,ImageNetA,ObjectNet
     # --alpha 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+    # --subset_proportion=0.001  \
 wait

@@ -1,7 +1,7 @@
 import os
 import torch
 
-from .common import ImageFolderWithPaths, SubsetSampler
+from .common import ImageFolderWithPaths, ImageFolderWithPaths2, SubsetSampler
 from .imagenet_classnames import get_classnames
 import numpy as np
 
@@ -153,6 +153,7 @@ class DeterministicImageNet(ImageNet):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.classnames = get_classnames(classnames)
+        self.subset_proportion = subset_proportion
 
         self.populate_train(subset_proportion)
         self.populate_test()
@@ -166,14 +167,16 @@ class DeterministicImageNet(ImageNet):
         kwargs = {'shuffle' : False} if sampler is None else {}
         if subset_proportion == 1.0:
             train_subset = self.train_dataset
-            batch_size = len(self.train_dataset)
+            batch_size = self.batch_size
         else:
             assert subset_proportion < 1.0 and subset_proportion > 0.0, "Invalid subset proportion, should be between 0.0 and 1.0"
-            import random
-            sample = random.sample(list(range(len(self.train_dataset))),int(subset_proportion*len(self.train_dataset)))
+            # import random
+            # sample = random.sample(list(range(len(self.train_dataset))),int(subset_proportion*len(self.train_dataset)))
             # This is a random sample, but it doesn't shuffle anything.
+            sample = getEvenlySpacedSample(int(subset_proportion*len(self.train_dataset)),len(self.train_dataset))
+            # list(range(int(subset_proportion*len(self.train_dataset))))
             train_subset = torch.utils.data.Subset(self.train_dataset, sample)
-            batch_size = len(sample)
+            batch_size = min(len(sample),self.batch_size)
         self.train_loader = torch.utils.data.DataLoader(
             train_subset,
             sampler=sampler,
@@ -181,3 +184,78 @@ class DeterministicImageNet(ImageNet):
             num_workers=self.num_workers,
             **kwargs,
         )
+
+class DeterministicImageNetWithLogits(DeterministicImageNet):
+    def __init__(self,
+                 preprocess,
+                 all_logits,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=32,
+                 num_workers=32,
+                 classnames='openai',
+                 subset_proportion=1.0,
+                 is_train=True):
+        self.preprocess = preprocess
+        self.all_logits = all_logits
+        self.location = location
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.classnames = get_classnames(classnames)
+        self.is_train=is_train
+        self.subset_proportion = subset_proportion
+
+        if is_train:
+            self.populate_train(subset_proportion, all_logits)
+        else:
+            self.populate_test(all_logits)
+    
+    def populate_train(self,subset_proportion, all_logits):
+        traindir = os.path.join(self.location, self.name(), 'train')
+        self.train_dataset = ImageFolderWithPaths2(
+            traindir,
+            all_logits=all_logits,  # This is specific to this dataset
+            transform=self.preprocess)
+        sampler = self.get_train_sampler()
+        kwargs = {'shuffle' : False} # Originally {'shuffle' : True} if sampler is None else {}
+        if subset_proportion == 1.0:
+            train_subset = self.train_dataset
+            # batch_size = len(self.train_dataset)
+        else:
+            assert subset_proportion < 1.0 and subset_proportion > 0.0, "Invalid subset proportion, should be between 0.0 and 1.0"
+            # import random
+            # sample = random.sample(list(range(len(self.train_dataset))),int(subset_proportion*len(self.train_dataset)))
+            # This is a random sample, but it doesn't shuffle anything.
+            sample = getEvenlySpacedSample(int(subset_proportion*len(self.train_dataset)),len(self.train_dataset))
+            # list(range(int(subset_proportion*len(self.train_dataset))))
+            train_subset = torch.utils.data.Subset(self.train_dataset, sample)
+            # batch_size = len(sample)
+        self.train_loader = torch.utils.data.DataLoader(
+            train_subset,
+            sampler=sampler,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            **kwargs,
+        )
+    
+    def populate_test(self,all_logits):
+        print("Populating test dataset of DeterministicImageNetWithLogits")
+        self.test_dataset = self.get_test_dataset(all_logits)
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            sampler=self.get_test_sampler()  # None
+        )
+        print(f"DeterministicImageNetWithLogits: len(self.test_loader)={len(self.test_loader)}")
+
+    def get_test_dataset(self,all_logits):
+        return ImageFolderWithPaths2(self.get_test_path(), all_logits, transform=self.preprocess)
+
+def getEvenlySpacedSample(sample_size,population_size):
+    space = int(float(population_size)/float(sample_size))
+    i = 0
+    sample = []
+    while i < population_size:
+        sample.append(i)
+        i += space
+    return sample

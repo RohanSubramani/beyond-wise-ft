@@ -6,6 +6,7 @@ import torchvision
 from torchvision import transforms
 from torchvision.datasets import CIFAR10 as PyTorchCIFAR10
 from torchvision.datasets import VisionDataset
+from .common import ImageFolderWithPaths2
 
 cifar_classnames = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
@@ -126,9 +127,49 @@ class DeterministicCIFAR10:  # Has shuffle = False even for trainloader, importa
                  location=os.path.expanduser('~/data'),
                  batch_size=128,
                  num_workers=16,
+                 subset_proportion=1.0,
                  classnames=None):
 
+        self.batch_size = batch_size
+        self.subset_proportion = subset_proportion
 
+        self.train_dataset = PyTorchCIFAR10(
+            root=location, download=True, train=True, transform=preprocess
+        )
+
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        self.test_dataset = PyTorchCIFAR10(
+            root=location, download=True, train=False, transform=preprocess
+        )
+
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+
+        self.classnames = self.test_dataset.classes
+
+class DeterministicCIFAR10WithLogits():
+    def __init__(self, all_logits, preprocess,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=128,
+                 num_workers=16,
+                 classnames=None,
+                 **kwargs):
+
+        self.location = location
+        self.preprocess = preprocess
+        self.all_logits = all_logits
+        self.batch_size = batch_size
+
+        traindir = os.path.join(self.location, 'cifar-10-python.tar.gz') # This doesn't work!
+        self.train_dataset = ImageFolderWithPaths2(
+            traindir,
+            all_logits=all_logits,  # This is specific to this dataset
+            transform=self.preprocess)
+        
         self.train_dataset = PyTorchCIFAR10(
             root=location, download=True, train=True, transform=preprocess
         )

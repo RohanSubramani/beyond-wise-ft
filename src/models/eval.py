@@ -129,7 +129,7 @@ def evaluate2(alphaModel, model_ckpts, args):  # For evaluation when stacking
     info = vars(args)
     for i, dataset_name in enumerate(args.eval_datasets):
         # print('Evaluating on', dataset_name)
-        dataloader = getDataset(dataset_name,model_ckpts,preprocess_fn,args)
+        dataloader = getDataset(dataset_name,model_ckpts,preprocess_fn,args,is_train=False)
 
         results = eval_single_dataset2(alphaModel, dataloader, args)
 
@@ -165,16 +165,20 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
         # alphaModel = ImageClassifier2(alphaModel.image_encoder, alphaModel.classification_head)
         if args.freeze_encoder:
             model = alphaModel.classification_head
-            input_key = 'features'
+            # input_key = 'features'
             image_enc = alphaModel.image_encoder
         else:
             model = alphaModel
-            input_key = 'images'
-            image_enc = None
-
+            # input_key = 'images'
+            image_enc = torch.nn.Identity()
+        
+        
         model.eval()
         batched_data = enumerate(dataloader)
+        print(f"\nlen(dataloader)={len(dataloader)}\n")
+        
         device = args.device
+        image_enc.to(device)
 
         # if hasattr(dataset, 'post_loop_metrics'):
         #     # keep track of labels, predictions and metadata
@@ -187,21 +191,25 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
                 data = maybe_dictionarize2(data)  # Keys in dict: images, all_logits, labels
                 # x = [data[key].cuda() for key in list(data.keys())[:-1]]
                 x1 = data['images'].to(device)
+                x1 = image_enc(x1)
                 x2 = data['all_logits'].to(device)
                 y = data['labels'].to(device)
 
                 # if 'image_paths' in data:
                 #     image_paths = data['image_paths']
-                print(f"model.__class__.__name__={model.__class__.__name__}")
+                # print(f"model.__class__.__name__={model.__class__.__name__}")  #  "ImageClassifier"
+
                 # logits = model(*x) # utils.get_logits2(model,*x)  # 
-                utils.get_logits2(model, x1, x2)
+                logits = utils.get_logits2(model, x1, x2)
+                
                 # projection_fn = getattr(dataset, 'project_logits', None)
                 # if projection_fn is not None:
                 #     logits = projection_fn(logits, device)
 
                 # if hasattr(dataset, 'project_labels'):
                 #     y = dataset.project_labels(y, device)
-                pred = logits.argmax(dim=1, keepdim=True).to(device)
+
+                pred = logits.argmax(dim=1).to(device)   #   , keepdim=True
                 # if hasattr(dataset, 'accuracy'):
                 #     acc1, num_total = dataset.accuracy(logits, y, image_paths, args)
                 #     correct += acc1
@@ -228,5 +236,5 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
             metrics = {}
         if 'top1' not in metrics:
             metrics['top1'] = top1
-        print(f"metrics={metrics}")
+        # print(f"metrics={metrics}")
         return metrics

@@ -27,7 +27,7 @@ class SubsetSampler(Sampler):
 
 class ImageFolderWithPaths(datasets.ImageFolder):
     def __init__(self, path, transform, flip_label_prob=0.0):
-        super().__init__(path, transform)
+        super().__init__(path, transform)  # transform = None by default in the like 5th parent class, lots of inheritance
         self.flip_label_prob = flip_label_prob
         if self.flip_label_prob > 0:
             print(f'Flipping labels with probability {self.flip_label_prob}')
@@ -46,6 +46,23 @@ class ImageFolderWithPaths(datasets.ImageFolder):
             'images': image,
             'labels': label,
             'image_paths': self.samples[index][0]
+        }
+
+class ImageFolderWithPaths2(ImageFolderWithPaths):  # For logit ensembling
+    def __init__(self, path, all_logits, transform, flip_label_prob=0.0):
+        super().__init__(path, transform, flip_label_prob)  
+        # transform = None by default in the like 6th parent class, lots of inheritance
+        self.all_logits = all_logits
+
+    def __getitem__(self, index):
+        d = super(ImageFolderWithPaths2, self).__getitem__(index)
+        image, label, image_path = d['images'], d['labels'], d['image_paths']
+        all_logits = self.all_logits[index]
+        return {
+            'images': image,
+            'all_logits': all_logits,
+            'labels': label,
+            'image_paths': image_path
         }
 
 
@@ -97,15 +114,16 @@ def get_features_helper(image_encoder, dataloader, device):
 def get_features(is_train, image_encoder, dataset, device, model_name=None):
     split = 'train' if is_train else 'val'
     dname = type(dataset).__name__
+    subset_proportion = dataset.subset_proportion
     if image_encoder.__class__.__name__ is 'ImageClassifier':
         image_encoder2 = image_encoder.image_encoder   # Used when getting logits using models instead of features using image encoders
     else:
         image_encoder2 = image_encoder
     if image_encoder2.cache_dir is not None:
         if model_name is None:
-            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}'
+            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{f"subset_proportion={subset_proportion}"}/{split}'
         else:
-            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}/{model_name}' # Different models don't load from each other's logits
+            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{f"subset_proportion={subset_proportion}"}/{split}/{model_name}' # Different models don't load from each other's logits
         cached_files = glob.glob(f'{cache_dir}/*')
     if image_encoder2.cache_dir is not None and len(cached_files) > 0:
         print(f'Getting features from {cache_dir}')
