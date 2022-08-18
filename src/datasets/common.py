@@ -57,7 +57,24 @@ class ImageFolderWithPaths2(ImageFolderWithPaths):  # For logit ensembling
     def __getitem__(self, index):
         d = super(ImageFolderWithPaths2, self).__getitem__(index)
         image, label, image_path = d['images'], d['labels'], d['image_paths']
-        all_logits = self.all_logits[index]
+        try:
+            all_logits = self.all_logits[index]
+            worked = True
+        except IndexError:
+            worked = False
+            print(f"self.all_logits.shape={self.all_logits.shape}")
+            try:
+                print(f"self.all_logits[0]={self.all_logits[0]}")
+            except IndexError:
+                print(f"Could not print self.all_logits[0].")
+            try:
+                print(f"index={index}, type(index)={type(index)}")
+                print(f"self.all_logits[index]={self.all_logits[index]}")
+            except IndexError:
+                print(f"Could not print self.all_logits[{index}].")
+        if not worked:
+            time.sleep(1000)
+            raise IndexError("index 0 is out of bounds for dimension 0 with size 0")
         return {
             'images': image,
             'all_logits': all_logits,
@@ -114,16 +131,15 @@ def get_features_helper(image_encoder, dataloader, device):
 def get_features(is_train, image_encoder, dataset, device, model_name=None):
     split = 'train' if is_train else 'val'
     dname = type(dataset).__name__
-    subset_proportion = dataset.subset_proportion
     if image_encoder.__class__.__name__ is 'ImageClassifier':
         image_encoder2 = image_encoder.image_encoder   # Used when getting logits using models instead of features using image encoders
     else:
         image_encoder2 = image_encoder
     if image_encoder2.cache_dir is not None:
         if model_name is None:
-            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{f"subset_proportion={subset_proportion}"}/{split}'
+            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}'
         else:
-            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{f"subset_proportion={subset_proportion}"}/{split}/{model_name}' # Different models don't load from each other's logits
+            cache_dir = f'{image_encoder2.cache_dir}/{dname}/{split}/{model_name}' # Different models don't load from each other's logits
         cached_files = glob.glob(f'{cache_dir}/*')
     if image_encoder2.cache_dir is not None and len(cached_files) > 0:
         print(f'Getting features from {cache_dir}')

@@ -161,7 +161,7 @@ def evaluate2(alphaModel, model_ckpts, args):  # For evaluation when stacking
 def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when stacking
     from stack import maybe_dictionarize2
     # print(f"alphaModel.__class__.__name__={alphaModel.__class__.__name__}") # ImageClassifier
-    if alphaModel.__class__.__name__ is 'ImageClassifier':
+    if alphaModel.__class__.__name__ is 'ImageClassifier' or 'ImageClassifier2':
         # alphaModel = ImageClassifier2(alphaModel.image_encoder, alphaModel.classification_head)
         if args.freeze_encoder:
             model = alphaModel.classification_head
@@ -175,7 +175,7 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
         
         model.eval()
         batched_data = enumerate(dataloader)
-        print(f"\nlen(dataloader)={len(dataloader)}\n")
+        # print(f"len(dataloader)={len(dataloader)}")
         
         device = args.device
         image_enc.to(device)
@@ -239,4 +239,4 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
         # print(f"metrics={metrics}")
         return metrics
     else:
-        print(f"alphaModel.__class__.__name__ = {alphaModel.__class__.__name__}, expected 'ImageClassifier'")
+        print(f"alphaModel.__class__.__name__ = {alphaModel.__class__.__name__}, expected 'ImageClassifier or ImageClassifier2'")

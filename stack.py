@@ -57,19 +57,11 @@ def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
     dataset_class = getattr(datasets, train_dataset)
     logit_dataset_class = getattr(datasets, corr_logits[train_dataset])
     # t0 = time.time()
-    if args.subset_proportion < 1.0:
-        dataset = dataset_class(
-            preprocess_fn,
-            location=args.data_location,
-            batch_size=args.batch_size,
-            subset_proportion=args.subset_proportion
-        )
-    else:
-        dataset = dataset_class(
-            preprocess_fn,
-            location=args.data_location,
-            batch_size=args.batch_size
-        )
+    dataset = dataset_class(
+        preprocess_fn,
+        location=args.data_location,
+        batch_size=args.batch_size
+    )
     # t1=time.time()
     # print(f"Time to get dataset = {t1-t0}")
     # print(f"model_ckpts={model_ckpts}")
@@ -79,34 +71,14 @@ def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
     # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
     # print(f"dir(dataset):\n{dir(dataset)}")
     # print(dataset.batch_size)
-    logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device, model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using models to get logits
+    logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device, model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using
+    # models to get logits
     # print(f"logit_datasets[0].shape={logit_datasets[0].shape}")
-    # t0 = time.time()
     if is_train:
         print(f"Producing all_logits_dataset, may take a few minutes for large datasets (~4 minutes for ImageNet) (mostly for converting to tensor).")
-    all_logits_dataset = torch.tensor([[dataset[i] for dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32) # torch.from_numpy(ndarray)
-
-    # print(f"len(all_logits_dataset)={len(all_logits_dataset)}")
-    # time.sleep(10)
-    # print(all_logits_dataset)
-    
-    # t1=time.time()
-    # elapsed = t1-t0
-    # elapsed_per=elapsed/(len(logit_datasets)*len(logit_datasets[0]))
-    # extrapolated_ImageNet_elapsed = elapsed_per*2*1.3e6
-    # fraction=(len(logit_datasets)*len(logit_datasets[0]))/(2*1.3e6)
-    # print()
-    # print(f"elapsed={elapsed},elapsed_per={elapsed_per},extrapolated_ImageNet_elapsed={extrapolated_ImageNet_elapsed},fraction={fraction}")
+    all_logits_dataset = torch.tensor([[dataset[i] for dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32)
 
     # print(f"all_logits_dataset[0].shape={all_logits_dataset[0].shape}")
-
-    # split = dataset.train_dataset if is_train else dataset.test_dataset
-    # base_data_loader = dataset.train_loader if train_dataset=='DeterministicImageNet' else DataLoader(split, batch_size=len(split))
-    # base_data_loader = DataLoader(split, batch_size=len(split))
-    # dataiter = iter(base_data_loader)
-    # images,labels = [split.samples[i][0] for i in range(len(split.samples))],torch.tensor(split.targets) # dataiter.next()
-    # finalDataset = TensorDataset(images,all_logits_dataset,labels)
-    # finalDataset = {'images': images, 'all_logits': all_logits_dataset, 'labels': labels}
     finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
         subset_proportion=args.subset_proportion, is_train=is_train)
     data_loader = finalDataset.train_loader if is_train else finalDataset.test_loader
@@ -115,8 +87,9 @@ def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
 
 def train(model,alphaModel,data_loader,image_enc,args): # input_key
     
-    model = model.cuda()
-    image_enc = image_enc.cuda()
+    device = args.device
+    for item in [model, image_enc, alphaModel]:
+        item.to(device)
     devices = list(range(torch.cuda.device_count()))
     print('Using devices', devices)
     model = torch.nn.DataParallel(model, device_ids=devices)
@@ -148,7 +121,8 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
     wandb.log({dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets})
 
     for epoch in range(args.epochs):
-        model = model.cuda()
+        for item in [model, image_enc, alphaModel]:
+            item.to(device)
         model.train()
         
         args.current_epoch = epoch
@@ -161,7 +135,7 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
             j=0 # Keeps track of total batches completed
 
         i=0
-        for batch in data_loader:
+        for batch in data_loader:  # This is where subsetting leads to issues, due to indexing mismatch
             start_time = time.time()
             
             step = i + epoch * num_batches
@@ -172,9 +146,9 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
             inputs = [image_enc(batch['images'].cuda()), batch['all_logits'].cuda()]
             labels = batch['labels'].cuda()
             data_time = time.time() - start_time
-            
+
             logits = model(*inputs) # This line caused stopping the first time I tried on gpu 5
-            
+
             loss = loss_fn(logits, labels)
 
             loss.backward()
