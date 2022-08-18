@@ -238,3 +238,5 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
             metrics['top1'] = top1
         # print(f"metrics={metrics}")
         return metrics
+    else:
+        print(f"alphaModel.__class__.__name__ = {alphaModel.__class__.__name__}, expected 'ImageClassifier'")

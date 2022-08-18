@@ -19,10 +19,10 @@ from src.models.eval import evaluate2
 
 def trainAlphaModel(args):
     num_models = len(args.model_ckpts)
-    model, alphaModel, preprocess_fn = getAlphaModel(args,num_models)  # This is not general: for non-CLIP alphaModels, you shouldn't be getting the preprocess function from here?
+    model, alphaModel, preprocess_fn, image_enc = getAlphaModel(args,num_models)  # This is not general: for non-CLIP alphaModels, you shouldn't be getting the preprocess function from here?
     # args.model_class,args.model_details
     data_loader = getDataset(args.train_dataset,args.model_ckpts,preprocess_fn,args)
-    train(model,alphaModel,data_loader,args)
+    train(model,alphaModel,data_loader,image_enc,args)
 
 
 def getAlphaModel(args,num_models):  # model_class,model_details
@@ -38,7 +38,7 @@ def getAlphaModel(args,num_models):  # model_class,model_details
             model = image_classifier.classification_head
             # input_key = 'features'
             preprocess_fn = image_classifier.val_preprocess # not train_preprocess, because data aug isn't needed if learned features are fixed
-            # image_enc = image_classifier.image_encoder
+            image_enc = image_classifier.image_encoder
         else:
             print('Fine-tuning end-to-end')
             model = image_classifier
@@ -46,10 +46,10 @@ def getAlphaModel(args,num_models):  # model_class,model_details
             preprocess_fn = image_classifier.train_preprocess
             cont = int(input("Are you sure that using train preprocess is ok? This likely includes data aug, which makes it impossible to store logits for all images and ensemble them. 1 for yes, continue. 2 for no, stop."))
             assert cont == 1, "You chose to stop because train preprocess (and likely data aug) is being used "
-            image_enc = None
+            image_enc = torch.nn.Identity()
             image_classifier.process_images = True
 
-        return model, image_classifier, preprocess_fn # , input_key
+        return model, image_classifier, preprocess_fn, image_enc # , input_key
 
 
 def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
@@ -78,11 +78,12 @@ def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
     model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
     # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
     # print(f"dir(dataset):\n{dir(dataset)}")
-    print(dataset.batch_size)
+    # print(dataset.batch_size)
     logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device, model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using models to get logits
     # print(f"logit_datasets[0].shape={logit_datasets[0].shape}")
     # t0 = time.time()
-    print(f"Producing all_logits_dataset, may take a few minutes for large datasets (~4 minutes for ImageNet) (mostly for converting to tensor).")
+    if is_train:
+        print(f"Producing all_logits_dataset, may take a few minutes for large datasets (~4 minutes for ImageNet) (mostly for converting to tensor).")
     all_logits_dataset = torch.tensor([[dataset[i] for dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32) # torch.from_numpy(ndarray)
 
     # print(f"len(all_logits_dataset)={len(all_logits_dataset)}")
@@ -112,9 +113,10 @@ def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
     # data_loader = DataLoader(finalDataset, batch_size=args.batch_size, shuffle=False)
     return data_loader
 
-def train(model,alphaModel,data_loader,args): # input_key
+def train(model,alphaModel,data_loader,image_enc,args): # input_key
     
     model = model.cuda()
+    image_enc = image_enc.cuda()
     devices = list(range(torch.cuda.device_count()))
     print('Using devices', devices)
     model = torch.nn.DataParallel(model, device_ids=devices)
@@ -167,7 +169,7 @@ def train(model,alphaModel,data_loader,args): # input_key
             optimizer.zero_grad()
 
             batch = maybe_dictionarize2(batch)
-            inputs = [batch['images'].cuda(), batch['all_logits'].cuda()]
+            inputs = [image_enc(batch['images'].cuda()), batch['all_logits'].cuda()]
             labels = batch['labels'].cuda()
             data_time = time.time() - start_time
             

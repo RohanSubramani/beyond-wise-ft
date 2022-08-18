@@ -33,7 +33,7 @@
 #     # --alpha 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
 # wait
 
-runNum=36
+runNum=38
 base="models/wiseft/stack_"
 og_run="ViTB32_8_"
 train_dataset="DeterministicImageNet"
@@ -52,7 +52,7 @@ model2="finetuned/checkpoint_10.pt"
 python stack.py   \
     --train-dataset=$train_dataset  \
     --save=$save  \
-    --epochs=1  \
+    --epochs=10  \
     --lr=3e-3  \
     --data_augmentation=1  \
     --batch-size=64  \
