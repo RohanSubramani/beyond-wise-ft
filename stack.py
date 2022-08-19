@@ -52,10 +52,10 @@ def getAlphaModel(args,num_models):  # model_class,model_details
         return model, image_classifier, preprocess_fn, image_enc # , input_key
 
 
-def getDataset(train_dataset,model_ckpts,preprocess_fn,args,is_train=True):
+def getDataset(original_dataset,model_ckpts,preprocess_fn,args,is_train=True):
     corr_logits = {'DeterministicCIFAR10':'DeterministicCIFAR10WithLogits','DeterministicImageNet':'DeterministicImageNetWithLogits'}    
-    dataset_class = getattr(datasets, train_dataset)
-    logit_dataset_class = getattr(datasets, corr_logits[train_dataset])
+    dataset_class = getattr(datasets, original_dataset)  # original = "without logits"
+    logit_dataset_class = getattr(datasets, corr_logits[original_dataset])
     # t0 = time.time()
     dataset = dataset_class(
         preprocess_fn,

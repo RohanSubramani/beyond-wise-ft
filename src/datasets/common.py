@@ -57,24 +57,7 @@ class ImageFolderWithPaths2(ImageFolderWithPaths):  # For logit ensembling
     def __getitem__(self, index):
         d = super(ImageFolderWithPaths2, self).__getitem__(index)
         image, label, image_path = d['images'], d['labels'], d['image_paths']
-        try:
-            all_logits = self.all_logits[index]
-            worked = True
-        except IndexError:
-            worked = False
-            print(f"self.all_logits.shape={self.all_logits.shape}")
-            try:
-                print(f"self.all_logits[0]={self.all_logits[0]}")
-            except IndexError:
-                print(f"Could not print self.all_logits[0].")
-            try:
-                print(f"index={index}, type(index)={type(index)}")
-                print(f"self.all_logits[index]={self.all_logits[index]}")
-            except IndexError:
-                print(f"Could not print self.all_logits[{index}].")
-        if not worked:
-            time.sleep(1000)
-            raise IndexError("index 0 is out of bounds for dimension 0 with size 0")
+        all_logits = self.all_logits[index]
         return {
             'images': image,
             'all_logits': all_logits,
