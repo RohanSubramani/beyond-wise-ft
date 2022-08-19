@@ -21,7 +21,7 @@ def trainAlphaModel(args):
     num_models = len(args.model_ckpts)
     model, alphaModel, preprocess_fn, image_enc = getAlphaModel(args,num_models)  # This is not general: for non-CLIP alphaModels, you shouldn't be getting the preprocess function from here?
     # args.model_class,args.model_details
-    data_loader = getDataset(args.train_dataset,args.model_ckpts,preprocess_fn,args)
+    data_loader = getLogitDataloader(args.train_dataset,args.model_ckpts,preprocess_fn,args)
     train(model,alphaModel,data_loader,image_enc,args)
 
 
@@ -52,38 +52,13 @@ def getAlphaModel(args,num_models):  # model_class,model_details
         return model, image_classifier, preprocess_fn, image_enc # , input_key
 
 
-def getDataset(original_dataset,model_ckpts,preprocess_fn,args,is_train=True):
-    corr_logits = {'DeterministicCIFAR10':'DeterministicCIFAR10WithLogits','DeterministicImageNet':'DeterministicImageNetWithLogits'}    
-    dataset_class = getattr(datasets, original_dataset)  # original = "without logits"
-    logit_dataset_class = getattr(datasets, corr_logits[original_dataset])
-    # t0 = time.time()
-    dataset = dataset_class(
-        preprocess_fn,
-        location=args.data_location,
-        batch_size=args.batch_size
-    )
-    # t1=time.time()
-    # print(f"Time to get dataset = {t1-t0}")
-    # print(f"model_ckpts={model_ckpts}")
-    # time.sleep(5)
-    models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
-    model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
-    # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
-    # print(f"dir(dataset):\n{dir(dataset)}")
-    # print(dataset.batch_size)
-    logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device, model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using
-    # models to get logits
-    # print(f"logit_datasets[0].shape={logit_datasets[0].shape}")
-    if is_train:
-        print(f"Producing all_logits_dataset, may take a few minutes for large datasets (~4 minutes for ImageNet) (mostly for converting to tensor).")
-    all_logits_dataset = torch.tensor([[dataset[i] for dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32)
+def getLogitDataloader(dataset_name,model_ckpts,preprocess_fn,args,is_train=True):
+    get_logit_dataloader_fxn_dict = {'DeterministicImageNet':getDeterministicImageNetLogitDataloader,'ImageNetV2':getImageNetV2LogitDataloader,'ImageNetR':getImageNetRLogitDataloader,'ImageNetSketch':getImageNetSketchLogitDataloader,'ImageNetA':getImageNetALogitDataloader,'ObjectNet':getObjectNetLogitDataloader,'CIFAR10':getCIFAR10LogitDataloader,'CIFAR101':getCIFAR101LogitDataloader,'CIFAR102':getCIFAR102LogitDataloader}
 
-    # print(f"all_logits_dataset[0].shape={all_logits_dataset[0].shape}")
-    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
-        subset_proportion=args.subset_proportion, is_train=is_train)
-    data_loader = finalDataset.train_loader if is_train else finalDataset.test_loader
-    # data_loader = DataLoader(finalDataset, batch_size=args.batch_size, shuffle=False)
-    return data_loader
+    get_logit_dataloader_fxn = get_logit_dataloader_fxn_dict[dataset_name]
+    logit_dataloader = get_logit_dataloader_fxn(model_ckpts,preprocess_fn,args,is_train)
+    
+    return logit_dataloader
 
 def train(model,alphaModel,data_loader,image_enc,args): # input_key
     
@@ -206,7 +181,110 @@ def maybe_dictionarize2(batch):
 
     return batch
 
+
+#####       Experimental code       #####
+
+def getDeterministicImageNetLogitDataloader(model_ckpts,preprocess_fn,args,is_train=True):  # original = "without logits"    
+    dataset_class = getattr(datasets, 'DeterministicImageNet')
+    logit_dataset_class = getattr(datasets, 'DeterministicImageNetWithLogits')
+    dataset = dataset_class(
+        preprocess_fn,
+        location=args.data_location,
+        batch_size=args.batch_size
+    )
+    models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
+    model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
+    # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
+    logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device,\
+        model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using
+    # models to get logits
+    if is_train:
+        print(f"Producing all_logits_dataset for DeterministicImageNet, will take a few minutes. (~4? Mostly for converting to tensor.)")
+    all_logits_dataset = torch.tensor([[logit_dataset[i] for logit_dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32)
+    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
+        subset_proportion=args.subset_proportion, is_train=is_train)
+    data_loader = finalDataset.train_loader if is_train else finalDataset.test_loader
+    return data_loader
+
+def getImageNetV2LogitDataloader(model_ckpts,preprocess_fn,args,*more_args,**kwargs):  # original = "without logits"
+    # *more_args,**kwargs is included to absorb additional inputs that aren't relevant here, like "is_train"
+    dataset_class = getattr(datasets, 'ImageNetV2')
+    logit_dataset_class = getattr(datasets, 'ImageNetV2WithLogits')
+    dataset = dataset_class(
+        preprocess_fn,
+        location=args.data_location,
+        batch_size=args.batch_size
+    )
+    models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
+    model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
+    # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
+    logit_datasets = [FeatureDataset(is_train=False, image_encoder=models[i], dataset=dataset, device=args.device,\
+        model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using
+    # models to get logits
+    all_logits_dataset = torch.tensor([[logit_dataset[i] for logit_dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32)
+    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
+        subset_proportion=args.subset_proportion)
+    data_loader = finalDataset.test_loader
+    return data_loader
+
+def getImageNetRLogitDataloader(model_ckpts,preprocess_fn,args,*more_args,**kwargs):  # original = "without logits"
+    pass
+
+def getImageNetSketchLogitDataloader():
+    pass
+
+def getImageNetALogitDataloader():
+    pass
+
+def getObjectNetLogitDataloader():
+    pass
+
+def getCIFAR10LogitDataloader():
+    pass
+
+def getCIFAR101LogitDataloader():
+    pass
+
+def getCIFAR102LogitDataloader():
+    pass
+
+
 if __name__ == "__main__":
-    print("\n\n\nMAKE SURE THAT YOUR TRAIN LOADER IS DETERMINISTIC! (Otherwise logit ensembling won't work at all.)\n\n\n")
+    print("\n\nMAKE SURE THAT YOUR TRAIN LOADER IS DETERMINISTIC! (Otherwise logit ensembling won't work at all.)\n\n")
     args = parse_arguments2()
     trainAlphaModel(args)
+
+#####            Earlier Code             #####
+    
+# def getDataset(original_dataset,model_ckpts,preprocess_fn,args,is_train=True):  # original = "without logits"
+#     corr_logits = {'DeterministicCIFAR10':'DeterministicCIFAR10WithLogits','DeterministicImageNet':'DeterministicImageNetWithLogits'}    
+#     dataset_class = getattr(datasets, original_dataset)
+#     logit_dataset_class = getattr(datasets, corr_logits[original_dataset])
+#     # t0 = time.time()
+#     dataset = dataset_class(
+#         preprocess_fn,
+#         location=args.data_location,
+#         batch_size=args.batch_size
+#     )
+#     # t1=time.time()
+#     # print(f"Time to get dataset = {t1-t0}")
+#     # print(f"model_ckpts={model_ckpts}")
+#     # time.sleep(5)
+#     models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
+#     model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
+#     # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
+#     # print(f"dir(dataset):\n{dir(dataset)}")
+#     # print(dataset.batch_size)
+#     logit_datasets = [FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device, model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using
+#     # models to get logits
+#     # print(f"logit_datasets[0].shape={logit_datasets[0].shape}")
+#     if is_train:
+#         print(f"Producing all_logits_dataset, may take a few minutes for large datasets (~4 minutes for ImageNet) (mostly for converting to tensor).")
+#     all_logits_dataset = torch.tensor([[logit_dataset[i] for logit_dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32)
+
+#     # print(f"all_logits_dataset[0].shape={all_logits_dataset[0].shape}")
+#     finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
+#         subset_proportion=args.subset_proportion, is_train=is_train)
+#     data_loader = finalDataset.train_loader if is_train else finalDataset.test_loader
+#     # data_loader = DataLoader(finalDataset, batch_size=args.batch_size, shuffle=False)
+#     return data_loader

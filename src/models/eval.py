@@ -120,7 +120,7 @@ def evaluate(image_classifier, args):
     return info
 
 def evaluate2(alphaModel, model_ckpts, args):  # For evaluation when stacking
-    from stack import getDataset
+    from stack import getLogitDataloader
     models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
     preprocess_fn = models[0].val_preprocess
     if args.eval_datasets is None:
@@ -129,7 +129,7 @@ def evaluate2(alphaModel, model_ckpts, args):  # For evaluation when stacking
     info = vars(args)
     for i, dataset_name in enumerate(args.eval_datasets):
         # print('Evaluating on', dataset_name)
-        dataloader = getDataset(dataset_name,model_ckpts,preprocess_fn,args,is_train=False)
+        dataloader = getLogitDataloader(dataset_name,model_ckpts,preprocess_fn,args,is_train=False)
 
         results = eval_single_dataset2(alphaModel, dataloader, args)
 

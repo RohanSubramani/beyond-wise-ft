@@ -33,7 +33,7 @@
 #     # --alpha 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
 # wait
 
-runNum=38
+runNum=40
 base="models/wiseft/stack_"
 og_run="ViTB32_8_"
 train_dataset="DeterministicImageNet"
@@ -64,7 +64,7 @@ python stack.py   \
     --results-db=$results_db  \
     --data-location=/shared/share_mala/data \
     --template=openai_imagenet_template  \
-    --eval-datasets=$train_dataset \
+    --eval-datasets=DeterministicImageNet,ImageNetV2 \
     --freeze-encoder \
     # ImageNet,ImageNetV2,ImageNetR,ImageNetSketch,ImageNetA,ObjectNet
     # --alpha 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0

@@ -1,8 +1,10 @@
 from PIL import Image
+import os
 
 from imagenetv2_pytorch import ImageNetV2Dataset
+from .imagenet import ImageNet, DeterministicImageNetWithLogits
+from .imagenet_classnames import get_classnames
 
-from .imagenet import ImageNet
 
 class ImageNetV2DatasetWithPaths(ImageNetV2Dataset):
     def __getitem__(self, i):
@@ -21,7 +23,7 @@ class ImageNetV2(ImageNet):
 
 class ImageNetV2DatasetWithPaths2(ImageNetV2DatasetWithPaths):  # For logit ensembling
     def __init__(self,all_logits,*args,**kwargs):
-        super().__init__(*args,**kwargs)  
+        super().__init__(*args,**kwargs)   # Default initialization of parent class (which itself inherits from at least one parent class)
         self.all_logits = all_logits
 
     def __getitem__(self, index):
@@ -35,6 +37,22 @@ class ImageNetV2DatasetWithPaths2(ImageNetV2DatasetWithPaths):  # For logit ense
             'image_paths': image_path
         }
 
-class ImageNetV2WithLogits(ImageNet):
+class ImageNetV2WithLogits(DeterministicImageNetWithLogits):
+    def __init__(self,
+                 preprocess,
+                 all_logits,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=32,
+                 num_workers=32,
+                 classnames='openai'):
+        self.preprocess = preprocess
+        self.all_logits = all_logits
+        self.location = location
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.classnames = get_classnames(classnames)
+
+        self.populate_test(all_logits)   # See ImageNet populate test 
+    
     def get_test_dataset(self,all_logits):
         return ImageNetV2DatasetWithPaths2(all_logits,transform=self.preprocess, location=self.location)
