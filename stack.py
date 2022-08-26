@@ -120,6 +120,7 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
             batch = maybe_dictionarize2(batch)
             inputs = [image_enc(batch['images'].cuda()), batch['all_logits'].cuda()]
             labels = batch['labels'].cuda()
+            
             data_time = time.time() - start_time
 
             logits = model(*inputs) # This line caused stopping the first time I tried on gpu 5
@@ -222,8 +223,7 @@ def getImageNetV2LogitDataloader(model_ckpts,preprocess_fn,args,*more_args,**kwa
         model_name=model_names[i]).data['logits'] for i in range(len(models))]  # Not actually using image encoders to get features, using
     # models to get logits
     all_logits_dataset = torch.tensor([[logit_dataset[i] for logit_dataset in logit_datasets] for i in range(len(logit_datasets[0]))],dtype=torch.float32)
-    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
-        subset_proportion=args.subset_proportion)
+    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size)
     data_loader = finalDataset.test_loader
     return data_loader
 

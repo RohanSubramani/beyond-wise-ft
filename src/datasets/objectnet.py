@@ -113,7 +113,10 @@ class ObjectNetBase(ImageNet):
         if logits.shape[1] == 113:
             return logits
         if torch.is_tensor(logits):
-            logits = logits.cpu().numpy()
+            try:
+                logits = logits.cpu().numpy()
+            except RuntimeError:
+                logits = logits.cpu().detach().numpy()
         logits_projected = np.zeros((logits.shape[0], 113))
         for k, v in self.rev_class_idx_map.items():
             logits_projected[:, k] = np.max(logits[:, v], axis=1).squeeze()

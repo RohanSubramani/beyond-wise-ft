@@ -5,10 +5,9 @@ import os
 import random
 import math
 
-def makePlots(results_db,eval_datasets,alphas,save):
+def makePlots(results_db,eval_datasets,alphas,save,pathStart='/shared/share_mala/rohan/test_and_open_clip/wise-ft'):
     
-    pathStart = '/shared/share_mala/rohan/test_and_open_clip/wise-ft' # FIXME This is too specific to my current file paths 
-    with open(pathStart+'/'+results_db,"r") as f:
+    with open(os.path.join(pathStart,results_db),"r") as f:
         results = json.loads(f.read())
     
     ensemble_results = results[-(len(alphas)):] # Just from weight ensemble evaluations

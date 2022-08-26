@@ -156,7 +156,7 @@ class DeterministicImageNet(ImageNet):
         self.populate_train()
         self.populate_test()
     
-    def populate_train(self):
+    def populate_train(self): # bad hacky thing: pass in a subset function
         traindir = os.path.join(self.location, self.name(), 'train')
         self.train_dataset = ImageFolderWithPaths(
             traindir,
@@ -196,7 +196,7 @@ class DeterministicImageNetWithLogits(DeterministicImageNet):
         else:
             self.populate_test(all_logits)
     
-    def populate_train(self,subset_proportion,all_logits):
+    def populate_train(self,subset_proportion,all_logits): # pass in images instead of constricting traindir from scratch
         traindir = os.path.join(self.location, self.name(), 'train')
         self.train_dataset = ImageFolderWithPaths2(
             traindir,
@@ -207,7 +207,7 @@ class DeterministicImageNetWithLogits(DeterministicImageNet):
         if subset_proportion == 1.0:
             train_subset = self.train_dataset
             batch_size = self.batch_size
-        else:
+        else: # make this into a function to pass around
             assert subset_proportion < 1.0 and subset_proportion > 0.0, "Invalid subset proportion, should be between 0.0 and 1.0"
             sample = getEvenlySpacedSample(int(subset_proportion*len(self.train_dataset)),len(self.train_dataset))
             train_subset = torch.utils.data.Subset(self.train_dataset, sample)

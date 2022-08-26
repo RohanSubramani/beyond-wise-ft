@@ -48,6 +48,14 @@ class ImageFolderWithPaths(datasets.ImageFolder):
             'image_paths': self.samples[index][0]
         }
 
+class PairDataset(Dataset):
+    def __init__(self, first_dataset, second_dataset):
+        assert len(first_dataset) == len(second_dataset)
+        self.first_dataset = first_dataset
+        self.second_dataset = second_dataset
+    def __getitem__(self, index):
+        return self.first_dataset[index], self.second_dataset[index]
+
 class ImageFolderWithPaths2(ImageFolderWithPaths):  # For logit ensembling
     def __init__(self, path, all_logits, transform, flip_label_prob=0.0):
         super().__init__(path, transform, flip_label_prob)  
