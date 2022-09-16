@@ -77,7 +77,7 @@ def get_logits(inputs, classifier):
         classifier = classifier.to(inputs.device)
     return classifier(inputs)
 
-def get_logits2(classifier, *inputs):
+def get_alphas(classifier, *inputs):
     assert callable(classifier)
     if hasattr(classifier, 'to'):
         classifier = classifier.to(inputs[0].device)

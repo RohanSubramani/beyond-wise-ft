@@ -47,7 +47,7 @@ class ImageEncoder(torch.nn.Module):
 
     @classmethod
     def load(cls, filename):
-        print(f'Loading image encoder from {filename}')
+        print(f'Loading image encoder from {filename}')    
         return utils.torch_load(filename)
 
 
@@ -96,7 +96,11 @@ class ImageClassifier(torch.nn.Module):
         except RuntimeError:
             self.process_images=True
             if self.process_images:
-                inputs = self.image_encoder(inputs)
+                try:
+                    inputs = self.image_encoder(inputs)
+                except RuntimeError:
+                    pass
+                    # print(f"inputs.shape = {inputs.shape}, hopefully this looks like an already-encoded image.")
             outputs = self.classification_head(inputs)
         return outputs
 
@@ -112,30 +116,38 @@ class ImageClassifier(torch.nn.Module):
 import torch.nn as nn
 import torch.nn.functional as F
 
-class ImageClassifier2(torch.nn.Module):  # Forward function maps to a list of alphas
-    def __init__(self, image_encoder, classification_head, process_images=True):
-        super().__init__()
-        self.image_encoder = image_encoder
-        self.classification_head = classification_head
-        self.process_images = process_images
-        if self.image_encoder is not None:
-            self.train_preprocess = self.image_encoder.train_preprocess
-            self.val_preprocess = self.image_encoder.val_preprocess
+# class ImageClassifier2(torch.nn.Module):  # Forward function maps to a list of alphas
+#     def __init__(self, image_encoder, classification_head, process_images=True):
+#         super().__init__()
+#         self.image_encoder = image_encoder
+#         self.classification_head = classification_head
+#         self.process_images = process_images
+#         if self.image_encoder is not None:
+#             self.train_preprocess = self.image_encoder.train_preprocess
+#             self.val_preprocess = self.image_encoder.val_preprocess
 
-    def forward(self, image, all_logits):
-        if self.process_images:
-            image = self.image_encoder(image)
-        out = self.classification_head(image,all_logits)
-        return out
+#     def forward(self, image):
+#         if self.process_images:
+#             # try:
+#             image = self.image_encoder(image)
+#             # except RuntimeError:
+#             #     pass  # Sometimes, it tries to use the image encoder when the image is already encoded
+#         out = self.classification_head(image)
+#         return out
 
-    def save(self, filename):
-        # print(f'Saving image classifier to {filename}')
-        utils.torch_save(self, filename)
+#     def save(self, filename):
+#         # print(f'Saving image classifier to {filename}')
+#         utils.torch_save(self, filename)
 
-    @classmethod
-    def load(cls, filename):
-        print(f'Loading image classifier from {filename}')
-        return utils.torch_load(filename)
+#     @classmethod
+#     def load(cls, filename):
+#         print(f'Loading image classifier from {filename}')
+#         image_classifier = utils.torch_load(filename)
+#         image_classifier2 = cls.__convert_to_image_classifier2(image_classifier)
+#         return image_classifier2
+    
+#     def __convert_to_image_classifier2(image_classifier):
+
 
 class ClassificationHead2(torch.nn.Linear):
     def __init__(self, normalize, input_size, output_size, weights=None, biases=None):
@@ -146,17 +158,19 @@ class ClassificationHead2(torch.nn.Linear):
         if biases is not None:
             self.bias = torch.nn.Parameter(biases.clone())
 
-    def forward(self, inputs, all_logits):
+    def forward(self, inputs):
         if self.normalize:
-            inputs = inputs / inputs.norm(dim=-1, keepdim=True) 
-        out = super().forward(inputs)
-        out = nn.Softmax(dim=0)(out)
+            inputs = inputs / inputs.norm(dim=-1, keepdim=True)
+        try:
+            out = super().forward(inputs)
+        except RuntimeError:
+            
+            inputs.to("cuda" if torch.cuda.is_available() else "cpu")
+            super().to("cuda" if torch.cuda.is_available() else "cpu")
+
+            out = super().forward(inputs)
+        out = nn.Softmax()(out) # nn.Softmax(dim=0)(out)  # dim=0 is wrong! It says implicit dim is deprecated but it works, maybe dim=1?
         # out.shape = torch.Size([batch_size, num_models]), all_logits.shape = torch.Size([batch_size, num_models, num_classes])
-        out = out @ all_logits
-        # out.shape = torch.Size([batch_size, batch_size, num_models])
-        out = torch.transpose(torch.diagonal(out),0,1)  
-        # This gets the correctly weighted logit ensembles - depends on weirdness of the tensor multiplication
-        # out = nn.Softmax(dim=0)(out)  # Loss function is applied to logits
         return out
 
     def save(self, filename):

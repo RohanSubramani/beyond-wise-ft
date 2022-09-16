@@ -203,7 +203,7 @@ class DeterministicImageNetWithLogits(DeterministicImageNet):
             all_logits=all_logits,  # Only in this dataset. Always contains logits for entire dataset, subsetting happens below.
             transform=self.preprocess)
         sampler = self.get_train_sampler()
-        kwargs = {'shuffle' : False} # Originally {'shuffle' : True} if sampler is None else {}
+        kwargs = {'shuffle' : True} if sampler is None else {} # This should be fine, since the logits are already matched with the images
         if subset_proportion == 1.0:
             train_subset = self.train_dataset
             batch_size = self.batch_size

@@ -9,6 +9,7 @@ from src.models import utils
 from src.models.modeling import *
 from src.datasets.common import get_dataloader, maybe_dictionarize
 import src.datasets as datasets
+from inputimeout import inputimeout, TimeoutOccurred
 
 def eval_single_dataset(image_classifier, dataset, args):
     if args.freeze_encoder:
@@ -102,11 +103,20 @@ def evaluate(image_classifier, args):
             info[dataset_name + ':' + key] = val
     if args.results_db is not None:
         if os.path.isfile(args.results_db):
-            with open(args.results_db, 'r') as f:
-                results = json.loads(f.read())
-            results.append(info)
-            with open(args.results_db, 'w') as f:
-                f.write(json.dumps(results))
+            try:
+                option = int(inputimeout(f"The entered results_db ({args.results_db}) already exists. Type '1' to add to it, and type '2' to overwrite it.",timeout=30))
+            except TimeoutOccurred:
+                option = 2
+                
+            if option == 1:
+                with open(args.results_db, 'r') as f:
+                    results = json.loads(f.read())
+                results.append(info)
+                with open(args.results_db, 'w') as f:
+                    f.write(json.dumps(results))
+            else:
+                with open(args.results_db, 'w') as f:
+                    f.write(json.dumps([info])) # List with info as its only element
         else:
             dirname = os.path.dirname(args.results_db)
             if dirname:
@@ -164,9 +174,9 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
     if alphaModel.__class__.__name__ is 'ImageClassifier' or 'ImageClassifier2':
         # alphaModel = ImageClassifier2(alphaModel.image_encoder, alphaModel.classification_head)
         if args.freeze_encoder:
-            model = alphaModel.classification_head
+            model = alphaModel.classification_head if hasattr(alphaModel,'classification_head') else alphaModel.module.classification_head
             # input_key = 'features'
-            image_enc = alphaModel.image_encoder
+            image_enc = alphaModel.image_encoder if hasattr(alphaModel,'image_encoder') else alphaModel.module.image_encoder
         else:
             model = alphaModel
             # input_key = 'images'
@@ -190,9 +200,9 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
                 sys.stdout.write(f"\r{i+1}/{len(dataloader)}") # I do want this to be erased by whatever comes next
                 data = maybe_dictionarize2(data)  # Keys in dict: images, all_logits, labels
                 # x = [data[key].cuda() for key in list(data.keys())[:-1]]
-                x1 = data['images'].to(device)
-                x1 = image_enc(x1)
-                x2 = data['all_logits'].to(device)
+                images = data['images'].to(device)
+                encoded_images = image_enc(images)
+                all_logits = data['all_logits'].to(device)
                 y = data['labels'].to(device)
 
                 # if 'image_paths' in data:
@@ -200,7 +210,9 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
                 # print(f"model.__class__.__name__={model.__class__.__name__}")  #  "ImageClassifier"
 
                 # logits = model(*x) # utils.get_logits2(model,*x)  # 
-                logits = utils.get_logits2(model, x1, x2)
+                alphas = utils.get_alphas(model, encoded_images)
+                weird_ensembled_logits = alphas @ all_logits
+                fixed_ensembled_logits = torch.transpose(torch.diagonal(weird_ensembled_logits),0,1)
                 
                 # projection_fn = getattr(dataset, 'project_logits', None)
                 # if projection_fn is not None:
@@ -209,7 +221,7 @@ def eval_single_dataset2(alphaModel, dataloader, args):  # For evaluation when s
                 # if hasattr(dataset, 'project_labels'):
                 #     y = dataset.project_labels(y, device)
 
-                pred = logits.argmax(dim=1).to(device)   #   , keepdim=True
+                pred = fixed_ensembled_logits.argmax(dim=1).to(device)   #   , keepdim=True
                 # if hasattr(dataset, 'accuracy'):
                 #     acc1, num_total = dataset.accuracy(logits, y, image_paths, args)
                 #     correct += acc1

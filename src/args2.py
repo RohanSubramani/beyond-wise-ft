@@ -124,6 +124,12 @@ def parse_arguments2():
         default=1.0,
         help="Proportion of train dataset to use."
     )
+    parser.add_argument(
+        "--diagnostic_test",
+        default=False,
+        action="store_true",
+        help="If True, multiplies logits of first model by -1 (so alpha model should learn to use 2nd model)."
+    )
     parsed_args = parser.parse_args()
     parsed_args.device = "cuda" if torch.cuda.is_available() else "cpu"
     
