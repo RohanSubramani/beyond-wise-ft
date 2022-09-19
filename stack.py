@@ -183,6 +183,10 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
                 average_alpha = torch.mean(model1_alphas)
                 log_dict["Average Alpha"] = average_alpha
                 
+                # if args.compare_with_optimal_alphas:
+                #     optimal_alphas = get_optimal_alphas(logits1,logits2,labels,loss_fn,args)
+                #     plot(model1_alphas,optimal_alphas,plot_file,j+1)
+                
                 wandb.log(log_dict)
                 total_loss = 0
             
