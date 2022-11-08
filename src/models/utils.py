@@ -1,4 +1,5 @@
 import os
+import json
 
 import torch
 from torch.utils.data import Dataset
@@ -106,6 +107,26 @@ class LabelSmoothing(torch.nn.Module):
         smooth_loss = -logprobs.mean(dim=-1)
         loss = self.confidence * nll_loss + self.smoothing * smooth_loss
         return loss.mean()
+
+def getOptimizer(params,args):
+    if args.optimizer == 'AdamW':
+        optimizer = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.wd)
+    elif args.optimizer == 'SGD':
+        optimizer = torch.optim.SGD(params, lr=args.lr, weight_decay=args.wd)
+    else:
+        raise ValueError(f"Optimizer not found. args.optimizer = {args.optimizer}")
+    return optimizer
+
+def saveAlphas(all_val_alphas,save_directory,eval_num,dataset):
+    outputDir = os.path.join(save_directory, 'alphas')
+    os.makedirs(outputDir, exist_ok=True)
+    if eval_num == -1: # This means it is actually for optimal alphas, not predicted alphas from any alpha model
+        outputFile = os.path.join(outputDir, f'optimalAlphas_{dataset}.txt')
+    else:
+        outputFile = os.path.join(outputDir, f'eval_{dataset}_{eval_num}.txt')
+    string_all_val_alphas = json.dumps(all_val_alphas)
+    with open(outputFile,"w") as dataFile:
+        dataFile.write(string_all_val_alphas)
 
 # import cv2
 # class LogitDataset(Dataset):

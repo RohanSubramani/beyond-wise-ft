@@ -150,11 +150,100 @@ declare -i runNum
 #     --eval-datasets=DeterministicImageNet,ImageNetV2 \
 #     --freeze-encoder \
 
-runNum=42
+# runNum=42
 
-lrs=(3e-6 3e-5 3e-4)  #  3e-3 3e-2 3e-1
+# lrs=(3e-6 3e-5 3e-4)  #  3e-3 3e-2 3e-1
 
-# If all goes well, 42-44 will be 3 diagnostic test runs with different lr's, testing if linear probing with alpha model built on CLIP features can learn to select an actual model's predictions over the negated predictions of another model (which should be the opposite of good)
+# # If all goes well, 42-44 will be 3 diagnostic test runs with different lr's, testing if linear probing with alpha model built on CLIP features can learn to select an actual model's predictions over the negated predictions of another model (which should be the opposite of good)
+
+# for lr in ${lrs[@]}
+# do
+#     base="models/wiseft/stack_"
+#     og_run="ViTB32_8_"
+#     train_dataset="DeterministicImageNet"
+#     save="$base$og_run$train_dataset$runNum"
+#     echo save is $save
+
+#     results="results/results"
+#     jsonl=".jsonl"
+#     results_db="$results$runNum$jsonl"
+#     echo results_db is $results_db
+
+#     pathStart="./models/wiseft/ViTB32_8/"
+#     model1="zeroshot.pt"
+#     model2="finetuned/checkpoint_10.pt"
+    
+#     python stack.py   \
+#         --train-dataset=$train_dataset  \
+#         --subset_proportion=0.01  \
+#         --save=$save  \
+#         --epochs=10  \
+#         --lr=$lr  \
+#         --data_augmentation=1  \
+#         --batch-size=64  \
+#         --cache-dir=cache  \
+#         --model=ViT-B-32-quickgelu  \
+#         --model_ckpts="$pathStart$model1","$pathStart$model2" \
+#         --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+#         --results-db=$results_db  \
+#         --data-location=/shared/share_mala/data \
+#         --template=openai_imagenet_template  \
+#         --eval-datasets=DeterministicImageNet,ImageNetV2 \
+#         --freeze-encoder  \
+#         --diagnostic_test
+#     wait
+#     runNum+=1
+# done
+
+# runNum=108
+
+# # lr = 3e-3 was the best above, by a little bit
+# wds=(1.0 2.0)
+
+# for wd in ${wds[@]}
+# do
+#     base="models/wiseft/stack_"
+#     og_run="ViTB32_8_"
+#     train_dataset="DeterministicImageNet"
+#     save="$base$og_run$train_dataset$runNum"
+#     echo save is $save
+
+#     results="results/results"
+#     jsonl=".jsonl"
+#     results_db="$results$runNum$jsonl"
+#     echo results_db is $results_db
+
+#     pathStart="./models/wiseft/ViTB32_8/"
+#     model1="zeroshot.pt"
+#     model2="finetuned/checkpoint_10.pt"
+    
+#     python stack.py   \
+#         --train-dataset=$train_dataset  \
+#         --subset_proportion=0.01  \
+#         --save=$save  \
+#         --epochs=10  \
+#         --lr=3e-3  \
+#         --wd=$wd  \
+#         --data_augmentation=8  \
+#         --batch-size=64  \
+#         --cache-dir=cache  \
+#         --model=ViT-B-32-quickgelu  \
+#         --model_ckpts="$pathStart$model1","$pathStart$model2" \
+#         --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+#         --results-db=$results_db  \
+#         --data-location=/shared/share_mala/data \
+#         --template=openai_imagenet_template  \
+#         --eval-datasets=DeterministicImageNet,ImageNetV2 \
+#         --freeze-encoder
+#     wait
+#     runNum+=1
+# done
+
+runNum=119
+
+lrs=(3e-4 3e-3 3e-2)
+
+CUDA_VISIBLE_DEVICES=0
 
 for lr in ${lrs[@]}
 do
@@ -179,7 +268,8 @@ do
         --save=$save  \
         --epochs=10  \
         --lr=$lr  \
-        --data_augmentation=1  \
+        --wd=4.0  \
+        --data_augmentation=8  \
         --batch-size=64  \
         --cache-dir=cache  \
         --model=ViT-B-32-quickgelu  \
@@ -188,9 +278,9 @@ do
         --results-db=$results_db  \
         --data-location=/shared/share_mala/data \
         --template=openai_imagenet_template  \
-        --eval-datasets=DeterministicImageNet,ImageNetV2 \
-        --freeze-encoder  \
-        --diagnostic_test
+        --eval-datasets=DeterministicImageNet,ImageNetV2  \
+        --optimizer="SGD"  \
+        --freeze-encoder
     wait
     runNum+=1
 done

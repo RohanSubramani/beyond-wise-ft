@@ -130,6 +130,18 @@ def parse_arguments2():
         action="store_true",
         help="If True, multiplies logits of first model by -1 (so alpha model should learn to use 2nd model)."
     )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="AdamW",
+        help="Which optimizer to use? Options: AdamW, SGD"
+    )
+    parser.add_argument(
+        "--eval_num",
+        type=int,
+        default=0,
+        help="Number of evaluations on val dataset(s) completed so far - probably should never be modified from 0, useful to have as an argument though. Used in eval.py.",
+    )
     parsed_args = parser.parse_args()
     parsed_args.device = "cuda" if torch.cuda.is_available() else "cpu"
     

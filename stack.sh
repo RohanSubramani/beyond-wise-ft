@@ -161,50 +161,229 @@ declare -i runNum
 
 # This ^ (48-50) is 45-47 repeated without the diagnostic_test tag, meaning without sabotaging one of the models by negating its logits.
 
-runNum=51
+# runNum=51
 
-# lr = 3e-3 was the best above, by a little bit
-das=(1 2 3 4 5 6 7 8 9 10 11) # Not sure if anything other than da=1 will work, have to think this through!!
-wds=(0.01 0.05 0.1 0.2 0.4)
+# # lr = 3e-3 was the best above, by a little bit
+# das=(1 2 3 4 5 6 7 8 9 10 11) # Not sure if anything other than da=1 will work, have to think this through!!
+# wds=(0.01 0.05 0.1 0.2 0.4)
 
-for da in ${das[@]}
-do
-    for wd in ${wds[@]}
-    do
-        base="models/wiseft/stack_"
-        og_run="ViTB32_8_"
-        train_dataset="DeterministicImageNet"
-        save="$base$og_run$train_dataset$runNum"
-        echo save is $save
+# for da in ${das[@]}
+# do
+#     for wd in ${wds[@]}
+#     do
+#         base="models/wiseft/stack_"
+#         og_run="ViTB32_8_"
+#         train_dataset="DeterministicImageNet"
+#         save="$base$og_run$train_dataset$runNum"
+#         echo save is $save
 
-        results="results/results"
-        jsonl=".jsonl"
-        results_db="$results$runNum$jsonl"
-        echo results_db is $results_db
+#         results="results/results"
+#         jsonl=".jsonl"
+#         results_db="$results$runNum$jsonl"
+#         echo results_db is $results_db
 
-        pathStart="./models/wiseft/ViTB32_8/"
-        model1="zeroshot.pt"
-        model2="finetuned/checkpoint_10.pt"
+#         pathStart="./models/wiseft/ViTB32_8/"
+#         model1="zeroshot.pt"
+#         model2="finetuned/checkpoint_10.pt"
         
-        python stack.py   \
-            --train-dataset=$train_dataset  \
-            --subset_proportion=0.01  \
-            --save=$save  \
-            --epochs=10  \
-            --lr=3e-3  \
-            --wd=$wd  \
-            --data_augmentation=$da  \
-            --batch-size=64  \
-            --cache-dir=cache  \
-            --model=ViT-B-32-quickgelu  \
-            --model_ckpts="$pathStart$model1","$pathStart$model2" \
-            --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
-            --results-db=$results_db  \
-            --data-location=/shared/share_mala/data \
-            --template=openai_imagenet_template  \
-            --eval-datasets=DeterministicImageNet,ImageNetV2 \
-            --freeze-encoder
-        wait
-        runNum+=1
-    done
-done
+#         python stack.py   \
+#             --train-dataset=$train_dataset  \
+#             --subset_proportion=0.01  \
+#             --save=$save  \
+#             --epochs=10  \
+#             --lr=3e-3  \
+#             --wd=$wd  \
+#             --data_augmentation=$da  \
+#             --batch-size=64  \
+#             --cache-dir=cache  \
+#             --model=ViT-B-32-quickgelu  \
+#             --model_ckpts="$pathStart$model1","$pathStart$model2" \
+#             --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+#             --results-db=$results_db  \
+#             --data-location=/shared/share_mala/data \
+#             --template=openai_imagenet_template  \
+#             --eval-datasets=DeterministicImageNet,ImageNetV2 \
+#             --freeze-encoder
+#         wait
+#         runNum+=1
+#     done
+# done
+
+# ^ 51-105 was a nested for loop of data aug's and wd's. Best val acc on ImageNet was the largest wd, so should try larger ones.
+
+# runNum=106
+
+# # lr = 3e-3 was the best above, by a little bit
+# wds=(0.7 1.5) # 1.0 2.0
+
+# for wd in ${wds[@]}
+# do
+#     base="models/wiseft/stack_"
+#     og_run="ViTB32_8_"
+#     train_dataset="DeterministicImageNet"
+#     save="$base$og_run$train_dataset$runNum"
+#     echo save is $save
+
+#     results="results/results"
+#     jsonl=".jsonl"
+#     results_db="$results$runNum$jsonl"
+#     echo results_db is $results_db
+
+#     pathStart="./models/wiseft/ViTB32_8/"
+#     model1="zeroshot.pt"
+#     model2="finetuned/checkpoint_10.pt"
+    
+#     python stack.py   \
+#         --train-dataset=$train_dataset  \
+#         --subset_proportion=0.01  \
+#         --save=$save  \
+#         --epochs=10  \
+#         --lr=3e-3  \
+#         --wd=$wd  \
+#         --data_augmentation=8  \
+#         --batch-size=64  \
+#         --cache-dir=cache  \
+#         --model=ViT-B-32-quickgelu  \
+#         --model_ckpts="$pathStart$model1","$pathStart$model2" \
+#         --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+#         --results-db=$results_db  \
+#         --data-location=/shared/share_mala/data \
+#         --template=openai_imagenet_template  \
+#         --eval-datasets=DeterministicImageNet,ImageNetV2 \
+#         --freeze-encoder
+#     wait
+#     runNum+=1
+# done
+
+# runNum=110
+
+# # lr = 3e-3 was the best above, by a little bit
+# wds=(0.7 1.0 1.5 2.0) # 1.0 2.0
+
+# for wd in ${wds[@]}
+# do
+#     base="models/wiseft/stack_"
+#     og_run="ViTB32_8_"
+#     train_dataset="DeterministicImageNet"
+#     save="$base$og_run$train_dataset$runNum"
+#     echo save is $save
+
+#     results="results/results"
+#     jsonl=".jsonl"
+#     results_db="$results$runNum$jsonl"
+#     echo results_db is $results_db
+
+#     pathStart="./models/wiseft/ViTB32_8/"
+#     model1="zeroshot.pt"
+#     model2="finetuned/checkpoint_10.pt"
+    
+#     python stack.py   \
+#         --train-dataset=$train_dataset  \
+#         --subset_proportion=0.01  \
+#         --save=$save  \
+#         --epochs=10  \
+#         --lr=3e-3  \
+#         --wd=$wd  \
+#         --data_augmentation=8  \
+#         --batch-size=64  \
+#         --cache-dir=cache  \
+#         --model=ViT-B-32-quickgelu  \
+#         --model_ckpts="$pathStart$model1","$pathStart$model2" \
+#         --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+#         --results-db=$results_db  \
+#         --data-location=/shared/share_mala/data \
+#         --template=openai_imagenet_template  \
+#         --eval-datasets=DeterministicImageNet,ImageNetV2 \
+#         --freeze-encoder
+#     wait
+#     runNum+=1
+# done
+
+# ^ 110 - 113 are the same as 106-109 (in a different order!), but now gradient norms and val loss are being tracked in wandb dashboard.
+
+# runNum=114
+
+# # lr = 3e-3 was the best above, by a little bit
+# wds=(4.0 8.0 50.0 100.0 300.0) # 1.0 2.0
+
+# for wd in ${wds[@]}
+# do
+#     base="models/wiseft/stack_"
+#     og_run="ViTB32_8_"
+#     train_dataset="DeterministicImageNet"
+#     save="$base$og_run$train_dataset$runNum"
+#     echo save is $save
+
+#     results="results/results"
+#     jsonl=".jsonl"
+#     results_db="$results$runNum$jsonl"
+#     echo results_db is $results_db
+
+#     pathStart="./models/wiseft/ViTB32_8/"
+#     model1="zeroshot.pt"
+#     model2="finetuned/checkpoint_10.pt"
+    
+#     python stack.py   \
+#         --train-dataset=$train_dataset  \
+#         --subset_proportion=0.01  \
+#         --save=$save  \
+#         --epochs=10  \
+#         --lr=3e-3  \
+#         --wd=$wd  \
+#         --data_augmentation=8  \
+#         --batch-size=64  \
+#         --cache-dir=cache  \
+#         --model=ViT-B-32-quickgelu  \
+#         --model_ckpts="$pathStart$model1","$pathStart$model2" \
+#         --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+#         --results-db=$results_db  \
+#         --data-location=/shared/share_mala/data \
+#         --template=openai_imagenet_template  \
+#         --eval-datasets=DeterministicImageNet,ImageNetV2 \
+#         --freeze-encoder
+#     wait
+#     runNum+=1
+# done
+
+
+CUDA_VISIBLE_DEVICES=1
+
+runNum=122
+
+base="models/wiseft/stack_"
+og_run="ViTB32_8_"
+train_dataset="DeterministicImageNet"
+save="$base$og_run$train_dataset$runNum"
+echo save is $save
+
+results="results/results"
+jsonl=".jsonl"
+results_db="$results$runNum$jsonl"
+echo results_db is $results_db
+
+pathStart="./models/wiseft/ViTB32_8/"
+model1="zeroshot.pt"
+model2="finetuned/checkpoint_10.pt"
+
+python stack.py   \
+    --train-dataset=$train_dataset  \
+    --subset_proportion=0.1  \
+    --save=$save  \
+    --epochs=10  \
+    --lr=3e-3  \
+    --wd=4.0  \
+    --data_augmentation=8  \
+    --batch-size=64  \
+    --cache-dir=cache  \
+    --model=ViT-B-32-quickgelu  \
+    --model_ckpts="$pathStart$model1","$pathStart$model2" \
+    --load="./models/wiseft/ViTB32_8/finetuned/wise_ft_alpha=0.500.pt"  \
+    --results-db=$results_db  \
+    --data-location=/shared/share_mala/data \
+    --template=openai_imagenet_template  \
+    --eval-datasets=DeterministicImageNet,ImageNetV2 \
+    --optimizer="SGD"  \
+    --freeze-encoder
+wait
+
+# 124 is the same as 120, except with subset proportion = 0.1 instead of 0.01.

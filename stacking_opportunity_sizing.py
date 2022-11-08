@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from src.models.modeling import ImageClassifier
+from src.models.utils import saveAlphas
 
 def sizeOpportunity(model1,model2,dataset_name,args):
     preprocess_fn = model1.val_preprocess
@@ -24,10 +25,10 @@ def sizeOpportunity(model1,model2,dataset_name,args):
     loss_fn = torch.nn.CrossEntropyLoss(reduction='none')
     i=0
     print_after = 200
+    optimalAlphas = []
     for batch in tqdm(data_loader):
         image,label = batch['images'],batch['labels']
         if hasattr(dataset, 'project_labels'):
-            print('0')
             label = dataset.project_labels(label, args.device)
         image,label,model1,model2 = image.to(args.device),label.to(args.device),model1.to(args.device),model2.to(args.device)
         logits1,logits2 = model1(image),model2(image)
@@ -37,6 +38,7 @@ def sizeOpportunity(model1,model2,dataset_name,args):
             logits1,logits2 = projection_fn(logits1, args.device),projection_fn(logits2, args.device)
 
         optimalAlpha = getOptimalAlpha(logits1,logits2,label,loss_fn,args)
+        optimalAlphas.append(optimalAlpha.item())
         loss,correct = useLogitEnsemble(label,loss_fn,logits1,logits2,dataset,args,alpha=optimalAlpha)
         num_correct += (1 if correct == True else 0)
         total += label.size(0)
@@ -51,6 +53,8 @@ def sizeOpportunity(model1,model2,dataset_name,args):
             print_after *= 2
         i+=1 # Can't use enumerate, it messes up tqdm
     # print(alpha,loss,correct)  # Diagnostic - are these reasonable?
+    saveAlphas(optimalAlphas,args.model_ckpts[1].split("/checkpoint")[0],-1) # Assumes the second model is a finetuned model
+    # E.g. "./models/wiseft/ViTB32_20" from "./models/wiseft/ViTB32_20/checkpoint_10"
     print(f"Final Accuracy:{num_correct / total}, Correct:{num_correct}, Total: {total}")
     t2 = time.time()
     timeForOptimalAlphaAndStaticLogitEnsemble = t2-t0
@@ -193,12 +197,12 @@ def makePlots(resultsNumbersList,resultsFolderPath="/shared/share_mala/rohan/tes
             else:
                 model_accuracies[key][dataset_name] = get_acc(results[key])   # Add to inner dict
     for key in model_accuracies.keys():
-        ood_accs = [model_accuracies[key][dataset_name] for dataset_name in model_accuracies[key].keys() if dataset_name is not "ImageNet"]
+        ood_accs = [model_accuracies[key][dataset_name] for dataset_name in model_accuracies[key].keys() if dataset_name != "ImageNet"]
         mean_ood_acc = np.mean(ood_accs)
         model_accuracies[key]['Mean_OOD'] = mean_ood_acc
     first_model_accs_dict = model_accuracies[list(model_accuracies.keys())[0]]
     for dataset_name in first_model_accs_dict.keys():
-        if dataset_name is "ImageNet":
+        if dataset_name == "ImageNet":
             pass
         else:
             for model in model_accuracies.keys():
@@ -226,8 +230,8 @@ def get_acc(dict_or_float):
         return dict_or_float["Accuracy"]
 
 if __name__ == "__main__":
-    # args = parse_arguments3()
-    # model1,model2,dataset_name = ImageClassifier.load(args.model_ckpts[0]),ImageClassifier.load(args.model_ckpts[1]),args.dataset
-    # sizeOpportunity(model1,model2,dataset_name,args)
+    args = parse_arguments3()
+    model1,model2,dataset_name = ImageClassifier.load(args.model_ckpts[0]),ImageClassifier.load(args.model_ckpts[1]),args.dataset
+    sizeOpportunity(model1,model2,dataset_name,args)
 
-    makePlots(resultsNumbersList=[1,2,3,4,5,6])
+    # makePlots(resultsNumbersList=[1,2,3,4,5,6])
