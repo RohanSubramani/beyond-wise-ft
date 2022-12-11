@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from src.models.modeling import ImageClassifier
-from src.models.utils import saveAlphas
+# from src.models.utils import saveAlphas
 
 def sizeOpportunity(model1,model2,dataset_name,args):
     preprocess_fn = model1.val_preprocess
@@ -39,6 +39,8 @@ def sizeOpportunity(model1,model2,dataset_name,args):
 
         optimalAlpha = getOptimalAlpha(logits1,logits2,label,loss_fn,args)
         optimalAlphas.append(optimalAlpha.item())
+        if i == 0:
+            print(f"optimalAlphas = {optimalAlphas}")
         loss,correct = useLogitEnsemble(label,loss_fn,logits1,logits2,dataset,args,alpha=optimalAlpha)
         num_correct += (1 if correct == True else 0)
         total += label.size(0)
@@ -53,7 +55,13 @@ def sizeOpportunity(model1,model2,dataset_name,args):
             print_after *= 2
         i+=1 # Can't use enumerate, it messes up tqdm
     # print(alpha,loss,correct)  # Diagnostic - are these reasonable?
-    saveAlphas(optimalAlphas,args.model_ckpts[1].split("/checkpoint")[0],-1) # Assumes the second model is a finetuned model
+    
+    # Temporary, nongeneral way to save the optimal alphas for zeroshot and 8th finetuned (ViTB32_8)
+    oae_model_name = f"OAE__./models/wiseft/ViTB32_8/zeroshot.pt__./models/wiseft/ViTB32_8/finetuned/checkpoint_10.pt"
+    from stack import writeAlphasToCentralizedAlphasFile
+    writeAlphasToCentralizedAlphasFile(oae_model_name,dataset_name,optimalAlphas)
+    
+    # saveAlphas(optimalAlphas,args.model_ckpts[1].split("/checkpoint")[0],-1) # Assumes the second model is a finetuned model
     # E.g. "./models/wiseft/ViTB32_20" from "./models/wiseft/ViTB32_20/checkpoint_10"
     print(f"Final Accuracy:{num_correct / total}, Correct:{num_correct}, Total: {total}")
     t2 = time.time()

@@ -59,7 +59,7 @@ class PairDataset(Dataset):
 class ImageFolderWithPaths2(ImageFolderWithPaths):  # For logit ensembling
     def __init__(self, path, all_logits, transform, flip_label_prob=0.0):
         super().__init__(path, transform, flip_label_prob)  
-        # transform = None by default in the like 6th parent class, lots of inheritance
+        # transform = None by default in something like the 6th parent class, lots of inheritance
         self.all_logits = all_logits
 
     def __getitem__(self, index):
@@ -72,7 +72,6 @@ class ImageFolderWithPaths2(ImageFolderWithPaths):  # For logit ensembling
             'labels': label,
             'image_paths': image_path
         }
-
 
 def maybe_dictionarize(batch):
     if isinstance(batch, dict):
@@ -137,7 +136,16 @@ def get_features(is_train, image_encoder, dataset, device, model_name=None):
         data = {}
         for cached_file in cached_files:
             name = os.path.splitext(os.path.basename(cached_file))[0]
-            data[name] = torch.load(cached_file) # torch.load(cached_file)
+            try:
+                data[name] = torch.load(cached_file)
+            except IsADirectoryError:
+                print(f"dname = {dname}")
+                print(f"image_encoder2.cache_dir = {image_encoder2.cache_dir}")
+                print(f"image_encoder.__class__.__name__ = {image_encoder.__class__.__name__}")
+                print(f"model_name = {model_name}")
+                print(f"cached_file = {cached_file}")
+                print(f"cached_files = {cached_files}")
+                data[name] = torch.load(cached_file) # Cause the stoppage and see the error anyway, this is just to get more info
     else:
         print(f'Did not find cached features at {cache_dir}. Building from scratch.')
         loader = dataset.train_loader if is_train else dataset.test_loader

@@ -213,7 +213,6 @@ class DeterministicImageNetWithLogits(DeterministicImageNet):
             train_subset = torch.utils.data.Subset(self.train_dataset, sample)
             batch_size = min(len(sample),self.batch_size)
 
-
         self.train_loader = torch.utils.data.DataLoader(
             train_subset,
             sampler=sampler,

@@ -1,0 +1,1 @@
+{"optimalAlpha": {"Accuracy": 0.7311, "Time_with_static_logit_ensemble": 305.0078468322754}, "model1": {"Accuracy": 0.551, "Time": 19.069204330444336}, "model2": {"Accuracy": 0.551, "Time": 18.61573338508606}, "static_wse": {"Accuracy": 0.6535, "Time": 18.89339804649353}, "static_logit_ensemble": {"Accuracy": 0.6527, "Time_with_optimalAlpha": 305.0078468322754}}

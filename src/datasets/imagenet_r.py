@@ -3,7 +3,9 @@ import torch
 import torchvision.datasets as datasets
 
 from .imagenet import ImageNetSubsample, ImageNetSubsampleValClasses
+from .imagenet_classnames import get_classnames
 import numpy as np
+from .common import ImageFolderWithPaths2
 
 
 CLASS_SUBLIST = [
@@ -37,3 +39,24 @@ class ImageNetR(ImageNetSubsample):
 
     def get_test_path(self):
         return os.path.join(self.location, 'imagenet-r')
+
+class ImageNetRWithLogits(ImageNetR):
+    def __init__(self,
+                 preprocess,
+                 all_logits,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=32,
+                 num_workers=32,
+                 classnames='openai'):
+        self.preprocess = preprocess
+        self.location = location
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.classnames = get_classnames(classnames)
+        class_sublist, self.class_sublist_mask = self.get_class_sublist_and_mask()
+        self.classnames = [self.classnames[i] for i in class_sublist]
+
+        self.populate_test(all_logits)
+
+    def get_test_dataset(self,all_logits):
+        return ImageFolderWithPaths2(self.get_test_path(), all_logits, transform=self.preprocess)

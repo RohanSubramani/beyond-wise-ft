@@ -1,7 +1,7 @@
 import os
 import json
 import sys
-import tqdm
+from tqdm import tqdm
 
 import torch
 import numpy as np
@@ -14,8 +14,8 @@ from stacking_opportunity_sizing import useLogitEnsemble, getOptimalAlpha, getDa
 import src.datasets as datasets
 from inputimeout import inputimeout, TimeoutOccurred
 
-def eval_single_dataset(image_classifier, dataset, args):
-    if args.freeze_encoder:
+def eval_single_dataset(image_classifier, dataset, args, use_feature_dataset=True):
+    if args.freeze_encoder and use_feature_dataset:
         model = image_classifier.classification_head
         input_key = 'features'
         image_enc = image_classifier.image_encoder
@@ -32,6 +32,7 @@ def eval_single_dataset(image_classifier, dataset, args):
     model.eval()
     dataloader = get_dataloader(
         dataset, is_train=False, args=args, image_encoder=image_enc)
+    print(f"Eval dataset size ~= {dataset.batch_size * len(dataloader)} or {args.batch_size * len(dataloader)}.")
     batched_data = enumerate(dataloader)
     device = args.device
 
@@ -94,7 +95,7 @@ def eval_single_dataset(image_classifier, dataset, args):
     
     return metrics
 
-def evaluate(image_classifier, args):
+def evaluate(image_classifier, args, first_eval=False):
     if args.eval_datasets is None:
         return
     print("Starting evaluation on eval datasets.")
@@ -118,10 +119,14 @@ def evaluate(image_classifier, args):
             info[dataset_name + ':' + key] = val
     if args.results_db is not None:
         if os.path.isfile(args.results_db):
-            try:
-                option = int(inputimeout(f"The entered results_db ({args.results_db}) already exists. Type '1' to add to it, and type '2' to overwrite it.",timeout=30))
-            except TimeoutOccurred:
-                option = 2
+            if first_eval:
+                try:
+                    option = int(inputimeout(f"The entered results_db ({args.results_db}) already exists. Type '1' to add to it, and type '2' to overwrite it.",timeout=30))
+                except TimeoutOccurred:
+                    option = 2
+                    print("Overwriting.")
+            else:
+                option = 1
                 
             if option == 1:
                 with open(args.results_db, 'r') as f:
@@ -144,7 +149,7 @@ def evaluate(image_classifier, args):
 
     return info
 
-def evaluate2(alphaModel, model_ckpts, args, final_model=False):  # For evaluation when stacking
+def evaluate2(alphaModel, model_ckpts, args, final_model=False, first_eval=False):  # For evaluation when stacking
     from stack import getLogitDataloader
     models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
     preprocess_fn = models[0].val_preprocess
@@ -166,11 +171,23 @@ def evaluate2(alphaModel, model_ckpts, args, final_model=False):  # For evaluati
             info[dataset_name + ':' + key] = val
     if args.results_db is not None:
         if os.path.isfile(args.results_db):
-            with open(args.results_db, 'r') as f:
-                results = json.loads(f.read())
-            results.append(info)
-            with open(args.results_db, 'w') as f:
-                f.write(json.dumps(results))
+            if first_eval:
+                try:
+                    option = int(inputimeout(f"The entered results_db ({args.results_db}) already exists. Type '1' to add to it, and type '2' to overwrite it.",timeout=30))
+                except TimeoutOccurred:
+                    option = 2
+            else:
+                option = 1
+                
+            if option == 1:
+                with open(args.results_db, 'r') as f:
+                    results = json.loads(f.read())
+                results.append(info)
+                with open(args.results_db, 'w') as f:
+                    f.write(json.dumps(results))
+            else:
+                with open(args.results_db, 'w') as f:
+                    f.write(json.dumps([info])) # List with info as its only element
         else:
             dirname = os.path.dirname(args.results_db)
             if dirname:
@@ -277,9 +294,11 @@ def eval_single_dataset2(alphaModel, dataloader, args, final_model=False, datase
         # print(f"metrics={metrics}")
 
         if final_model:
-            from stack import writeStackingResultsToCentralizedResultsFile
+            from stack import writeAlphasToCentralizedAlphasFile
             runNum = args.results_db.split(".")[0].split("results")[-1] # e.g. results/results122.jsonl --> 122
             model_name = "Stack__"+"__".join(args.model_ckpts)+f"__{runNum}"
+            all_val_alphas = [alpha_and_one_minus_alpha[0] for alpha_and_one_minus_alpha in all_val_alphas] # Want alpha but not 1-alpha
+            # This should be quick I think, works in <0.2 seconds for a similar case I tested in Colab
             writeAlphasToCentralizedAlphasFile(model_name,dataset_name,all_val_alphas)
 
         return metrics
@@ -287,7 +306,7 @@ def eval_single_dataset2(alphaModel, dataloader, args, final_model=False, datase
         print(f"alphaModel.__class__.__name__ = {alphaModel.__class__.__name__}, expected 'ImageClassifier or ImageClassifier2'")
 
 
-def evaluate3(model_ckpts, args):  # For 50-50 logit ensemble evaluation
+def evaluate3(model_ckpts, args, first_eval=False):  # For 50-50 logit ensemble evaluation
     from stack import getLogitDataloader
     models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
     preprocess_fn = models[0].val_preprocess
@@ -309,11 +328,23 @@ def evaluate3(model_ckpts, args):  # For 50-50 logit ensemble evaluation
             info[dataset_name + ':' + key] = val
     if args.results_db is not None:
         if os.path.isfile(args.results_db):
-            with open(args.results_db, 'r') as f:
-                results = json.loads(f.read())
-            results.append(info)
-            with open(args.results_db, 'w') as f:
-                f.write(json.dumps(results))
+            if first_eval:
+                try:
+                    option = int(inputimeout(f"The entered results_db ({args.results_db}) already exists. Type '1' to add to it, and type '2' to overwrite it.",timeout=30))
+                except TimeoutOccurred:
+                    option = 2
+            else:
+                option = 1
+                
+            if option == 1:
+                with open(args.results_db, 'r') as f:
+                    results = json.loads(f.read())
+                results.append(info)
+                with open(args.results_db, 'w') as f:
+                    f.write(json.dumps(results))
+            else:
+                with open(args.results_db, 'w') as f:
+                    f.write(json.dumps([info])) # List with info as its only element
         else:
             dirname = os.path.dirname(args.results_db)
             if dirname:
@@ -374,8 +405,12 @@ def eval_single_dataset_ose(models,dataset_name,args):   # Static equal-weight l
         if hasattr(dataset, 'project_labels'):
             label = dataset.project_labels(label, args.device)
         image,label,model1,model2 = image.to(args.device),label.to(args.device),models[0].to(args.device),models[1].to(args.device)
-        logits1,logits2 = model1(image),model2(image)
-        
+        try:
+            logits1,logits2 = model1(image),model2(image)
+        except RuntimeError:
+            print(torch.cuda.memory_summary(abbreviated=False))
+            logits1,logits2 = model1(image),model2(image) # Still raises RuntimeError, just yields more info
+
         projection_fn = getattr(dataset, 'project_logits', None)
         if projection_fn is not None:
             logits1,logits2 = projection_fn(logits1, args.device),projection_fn(logits2, args.device)

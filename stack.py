@@ -8,6 +8,7 @@ import pandas as pd
 import json
 import copy
 from torch.nn import DataParallel
+import matplotlib.pyplot as plt
 
 from src.args2 import parse_arguments2
 from src.models.modeling import ImageClassifier, ClassificationHead2
@@ -26,10 +27,14 @@ def trainAlphaModel(args):
     num_models = len(args.model_ckpts)
     model, alphaModel, preprocess_fn, image_enc = getAlphaModel(args,num_models)  # This is not general: for non-CLIP alphaModels, you shouldn't be getting the preprocess function from here?
     # args.model_class,args.model_details
+
+    # Test:
+    data_loader = getLogitDataloader('ImageNetR',args.model_ckpts,preprocess_fn,args,is_train=False)
+    time.sleep(100)
     data_loader = getLogitDataloader(args.train_dataset,args.model_ckpts,preprocess_fn,args)
     eval_results = train(model,alphaModel,data_loader,image_enc,args)
     writeStackingResultsToCentralizedResultsFile(eval_results,args)
-    saveComparisons(args)
+    saveComparisons(preprocess_fn,args)
 
 def getAlphaModel(args,num_models):  # model_class,model_details
     if args.load is not None:
@@ -61,12 +66,15 @@ def getAlphaModel(args,num_models):  # model_class,model_details
 
 
 def getLogitDataloader(dataset_name,model_ckpts,preprocess_fn,args,is_train=True):
-    get_logit_dataloader_fxn_dict = {'DeterministicImageNet':getDeterministicImageNetLogitDataloader,'ImageNetV2':getImageNetV2LogitDataloader,'ImageNetR':getImageNetRLogitDataloader,'ImageNetSketch':getImageNetSketchLogitDataloader,'ImageNetA':getImageNetALogitDataloader,'ObjectNet':getObjectNetLogitDataloader,'CIFAR10':getCIFAR10LogitDataloader,'CIFAR101':getCIFAR101LogitDataloader,'CIFAR102':getCIFAR102LogitDataloader}
+    get_logit_dataset_class_name_dict = {'DeterministicImageNet':'DeterministicImageNetWithLogits','ImageNetV2':'ImageNetV2WithLogits','ImageNetR':'ImageNetRWithLogits','ImageNetSketch':getImageNetSketchLogitDataloader,'ImageNetA':getImageNetALogitDataloader,'ObjectNet':getObjectNetLogitDataloader,'CIFAR10':getCIFAR10LogitDataloader,'CIFAR101':getCIFAR101LogitDataloader,'CIFAR102':getCIFAR102LogitDataloader}
     
     print(f"Getting logit dataloader for {dataset_name}.")
     t0 = time.time()
-    get_logit_dataloader_fxn = get_logit_dataloader_fxn_dict[dataset_name]
-    logit_dataloader = get_logit_dataloader_fxn(model_ckpts,preprocess_fn,args,is_train)
+    all_logits_dataset = getAllLogitsDataset(dataset_name, model_ckpts,preprocess_fn,args,is_train)
+    logit_dataset_class = getattr(datasets,get_logit_dataset_class_name_dict[dataset_name])
+    finalDataset = logit_dataset_class(preprocess_fn,all_logits_dataset,location=args.data_location,batch_size=args.batch_size,
+        subset_proportion=args.subset_proportion, is_train=is_train)
+    logit_dataloader = finalDataset.train_loader if is_train else finalDataset.test_loader
     t1 = time.time()
     obtain_time = t1 - t0
     print(f"{dataset_name} dataloader obtained in {obtain_time} seconds.")
@@ -108,15 +116,17 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
     wandb.watch(model)
 
     args.current_epoch = -1
-    t0 = time.time()
-    eval_results = evaluate2(alphaModel, args.model_ckpts, args)
-    t1 = time.time()
-    args.eval_num += 1
-    eval_time = t1-t0
-    log_dict = {dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets}
-    for dataset in args.eval_datasets:
-        log_dict[dataset+" Val Loss"] = eval_results[dataset+":val_loss"]
-    wandb.log(log_dict)
+    eval_time = 0
+    if args.epochs > 0: # basically always, but for some test runs this can be skipped
+        t0 = time.time()
+        eval_results = evaluate2(alphaModel, args.model_ckpts, args, first_eval=True)
+        t1 = time.time()
+        args.eval_num += 1
+        eval_time = t1-t0
+        log_dict = {dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets}
+        for dataset in args.eval_datasets:
+            log_dict[dataset+" Val Loss"] = eval_results[dataset+":val_loss"]
+        wandb.log(log_dict)
 
     total_num_batches = num_batches*args.epochs
     print_every = math.ceil(total_num_batches / 25) if eval_time<100 else math.ceil(total_num_batches / 10)
@@ -131,6 +141,7 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
     total_grad_norm = 0 # Keeps track of sum of gradient norms between evaluations of average gradient norm (for checking convergence)
     total_average_alpha = 0 # Sum of (average alpha this batch) across all batches since last print_every 
     
+    print("Starting training.")
     for epoch in range(args.epochs):
         for item in [model, image_enc, alphaModel]:
             item.to(device) # These actually do work and are necessary, I wasn't sure originally
@@ -240,7 +251,8 @@ def train(model,alphaModel,data_loader,image_enc,args): # input_key
             torch.save(optimizer.state_dict(), optim_path)
     
     print("")
-    eval_results = evaluate2(alphaModel, args.model_ckpts, args, final_model=True)
+    print("Starting evaluation of trained model.")
+    eval_results = evaluate2(alphaModel, args.model_ckpts, args, final_model=True) # Saves the predicted alphas for comparison with optimal
 
     log_dict = {dataset+" Acc": eval_results[dataset+":top1"] for dataset in args.eval_datasets}
     for dataset in args.eval_datasets:
@@ -264,6 +276,35 @@ def maybe_dictionarize2(batch):
 
 
 #####       Experimental code       #####
+
+def getAllLogitsDataset(dataset_name, model_ckpts,preprocess_fn,args,is_train=True):
+    dataset_class = getattr(datasets, dataset_name)
+    dataset = dataset_class(
+        preprocess_fn,
+        location=args.data_location,
+        batch_size=args.batch_size
+    )
+    models = [ImageClassifier.load(ckpt) for ckpt in model_ckpts]
+    model_names = [model_ckpt.split("wiseft/")[-1].split(".")[0] for model_ckpt in model_ckpts]
+    # Ex. "./models/wiseft/ViTB32_8/zeroshot.pt" --> ViTB32_8/zeroshot
+    
+    if is_train:
+        print(f"Producing all_logits_dataset for {dataset_name}, will take a few minutes. (~4? Mostly for converting to tensor.)")
+    
+    logit_datasets = torch.tensor([FeatureDataset(is_train=is_train, image_encoder=models[i], dataset=dataset, device=args.device,\
+        model_name=model_names[i]).data['logits'] for i in range(len(models))])
+        # Not actually using image encoders to get features, using models to get logits
+
+    # logit_datasets.shape = 2 x n (eg 1.3 mil) x 1000
+    
+    print(f"logit_datasets.shape = {logit_datasets.shape}")
+    all_logits_dataset = logit_datasets.permute(1, 0, 2) # "Number of dims don't match in permute"
+    print(f"all_logits_dataset.shape = {all_logits_dataset.shape}")
+
+    if args.diagnostic_test:
+        all_logits_dataset[:,0] *= -1
+
+    return all_logits_dataset
 
 def getDeterministicImageNetLogitDataloader(model_ckpts,preprocess_fn,args,is_train=True): 
     dataset_class = getattr(datasets, 'DeterministicImageNet')
@@ -374,15 +415,25 @@ def writeStackingResultsToCentralizedResultsFile(eval_results,args):
     model_name = "Stack__"+"__".join(args.model_ckpts)+f"__{runNum}"
     for eval_dataset in args.eval_datasets:
         key = f"{model_name}, {eval_dataset}"
-        with open(centralized_results_file,"r") as file:
-            results = json.loads(file.read())
+        try:
+            with open(centralized_results_file,"r") as file:
+                results = json.loads(file.read())
+                if key in results.keys():
+                    print(f"Overwriting earlier version of {eval_dataset} results, might be doing redundant work.")
+                results[key] = {}
+                results[key]["accuracy"] = eval_results[eval_dataset+":top1"]
+                results[key]["val_loss"] = eval_results[eval_dataset+":val_loss"]
+        except FileNotFoundError:
+            results = {}
+            results[key] = {}
             results[key]["accuracy"] = eval_results[eval_dataset+":top1"]
             results[key]["val_loss"] = eval_results[eval_dataset+":val_loss"]
         with open(centralized_results_file,"w") as file: # Overwrites previous file with the new additions
             json.dump(results,file)
 
-def saveComparisons(args):
-    model_names = args.model_ckpts
+def saveComparisons(preprocess_fn,args):
+    t0 = time.time()
+    model_names = copy.deepcopy(args.model_ckpts)
     model_names.append("WSE__"+"__".join(args.model_ckpts)) # Weight space ensemble
     model_names.append("OSE__"+"__".join(args.model_ckpts)) # Output space ensemble
     model_names.append("OAE__"+"__".join(args.model_ckpts)) # Optimal alpha ensemble
@@ -392,22 +443,35 @@ def saveComparisons(args):
 
     accuracy_table = [[0 for j in model_names] for i in args.eval_datasets]
     val_loss_table = [[0 for j in model_names] for i in args.eval_datasets]
-    for i in range(len(args.eval_datasets)):
-        dataset = args.eval_datasets[i]
-        for j in range(len(model_names)):
-            accuracy_table[i][j],val_loss_table[i][j] = __get_accuracy_and_val_loss(model_names[j],dataset,args)
+    for j in range(len(model_names)):
+        for i in range(len(args.eval_datasets)):
+            dataset_name = args.eval_datasets[i]
+            accuracy_table[i][j],val_loss_table[i][j] = __get_accuracy_and_val_loss(model_names[j],dataset_name,preprocess_fn,args)
             
             # Save after each addition, so even if something goes wrong, what is completed so far will be saved.
             accuracy_df = pd.DataFrame(accuracy_table, args.eval_datasets, abbreviated_model_names)
             val_loss_df = pd.DataFrame(val_loss_table, args.eval_datasets, abbreviated_model_names)
             if args.save is not None:
                 os.makedirs(args.save, exist_ok=True)
-                accuracy_df.to_csv(os.path.join(args.save, f'accuracy_table.csv')) # Overwrites existing file
-                val_loss_df.to_csv(os.path.join(args.save, f'val_loss_table.csv')) # Overwrites existing file
+                accuracy_df.to_csv(os.path.join(args.save, 'accuracy_table.csv')) # Overwrites existing file
+                val_loss_df.to_csv(os.path.join(args.save, 'val_loss_table.csv')) # Overwrites existing file
+    
+    try:
+        plotPredictedVsOptimalAlphaComparison(model_names[-2],model_names[-1],args.eval_datasets,args.save)
+    except KeyError as e:
+        print("Some alphas not available.")
+        print(e)
+
+    tf = time.time()
+    total_time = tf-t0
+    time_file = os.path.join(args.save, 'time.txt')
+    with open(time_file,'w') as file:
+        file.write(f"Total time for saveComparisons function: {round(total_time,3)} seconds = {round(total_time/60,4)} minutes.")
         
-def __get_accuracy_and_val_loss(model_name,eval_dataset,args):
+def __get_accuracy_and_val_loss(model_name,eval_dataset_name,preprocess_fn,args):
+    print(f"\nGetting accuracy and val loss of {model_name} on {eval_dataset_name}.\n")
     centralized_results_file = "./central_results.txt"
-    key = f"{model_name}, {eval_dataset}"
+    key = f"{model_name}, {eval_dataset_name}"
     try:
         with open(centralized_results_file,"r") as file:
             results = json.loads(file.read())
@@ -415,12 +479,13 @@ def __get_accuracy_and_val_loss(model_name,eval_dataset,args):
                 accuracy = results[key]["accuracy"]
                 val_loss = results[key]["val_loss"]
             else:
-                accuracy,val_loss = __compute_accuracy_and_val_loss(model_name,eval_dataset,args)
+                accuracy,val_loss = __compute_accuracy_and_val_loss(model_name,eval_dataset_name,preprocess_fn,args)
+                results[key] = {}
                 results[key]["accuracy"] = accuracy
                 results[key]["val_loss"] = val_loss
     except FileNotFoundError:   # What if the file is empty, and results.keys() isn't available? I think that will never happen though.
         print("Caught FileNotFoundError.")
-        accuracy,val_loss = __compute_accuracy_and_val_loss(model_name,eval_dataset,args)
+        accuracy,val_loss = __compute_accuracy_and_val_loss(model_name,eval_dataset_name,args)
         results = {}
         results[key] = {}
         results[key]["accuracy"] = accuracy
@@ -429,28 +494,36 @@ def __get_accuracy_and_val_loss(model_name,eval_dataset,args):
         json.dump(results,file)
     return accuracy,val_loss
 
-def __compute_accuracy_and_val_loss(model_name,eval_dataset,args):
+def __compute_accuracy_and_val_loss(model_name,eval_dataset_name,preprocess_fn,args):
+    print(f"Computing accuracy and val loss of {model_name} on {eval_dataset_name}.")
     parsing = model_name.split("__")
+    dataset_class = getattr(datasets, eval_dataset_name)
+    eval_dataset = dataset_class(
+        preprocess_fn,
+        location=args.data_location,
+        batch_size=args.batch_size
+    )
 
     if len(parsing) == 1: # If this is one of the base model ckpts, rather than an ensemble
         model = ImageClassifier.load(model_name)
-        metrics = eval_single_dataset(model, eval_dataset, args)
+        metrics = eval_single_dataset(model, eval_dataset, args, use_feature_dataset=False)
         accuracy,val_loss = metrics['top1'],metrics['val_loss']
     
     elif parsing[0]=="WSE":
         models = [ImageClassifier.load(model_name) for model_name in parsing[1:]]
         wse_model = getStaticWSEModel(models)
-        metrics = eval_single_dataset(wse_model, eval_dataset, args)
+        metrics = eval_single_dataset(wse_model, eval_dataset, args, use_feature_dataset=False)
         accuracy,val_loss = metrics['top1'],metrics['val_loss']
 
     elif parsing[0]=="OSE":
         models = [ImageClassifier.load(model_name) for model_name in parsing[1:]]
-        accuracy,val_loss = eval_single_dataset_ose(models,eval_dataset,args)
+        accuracy,val_loss = eval_single_dataset_ose(models,eval_dataset_name,args)
+        # I did a temporary workaround for this, but this doesn't work, so FIXME!
         
     elif parsing[0]=="OAE":
         models = [ImageClassifier.load(model_name) for model_name in parsing[1:]]
-        accuracy,val_loss,optimalAlphas = eval_single_dataset_oae(models,eval_dataset,args)
-        writeAlphasToCentralizedAlphasFile(model_name,eval_dataset,optimalAlphas)
+        accuracy,val_loss,optimalAlphas = eval_single_dataset_oae(models,eval_dataset_name,args)
+        writeAlphasToCentralizedAlphasFile(model_name,eval_dataset_name,optimalAlphas)
 
     # elif parsing[0]=="Stack": Don't need to worry about this case, the way saveComparisons is currently called this never happens.
     # However, this is a strange asymmetrical treatment of stacking, and (TODO) I hope to fix the symmetry in the future by making
@@ -482,22 +555,35 @@ def getStaticWSEModel(models,alphas=None):
     static_wse_model.load_state_dict(theta_new)
     return static_wse_model
 
-def writeAlphasToCentralizedAlphasFile(model_name,eval_dataset,alphas):
+def writeAlphasToCentralizedAlphasFile(model_name,eval_dataset_name,alphas):
     centralized_alphas_file = "./central_alphas.txt"
-    key = f"{model_name}, {eval_dataset}"
+    key = f"{model_name}, {eval_dataset_name}"
     try:
         with open(centralized_alphas_file,"r") as file:
             results = json.loads(file.read())
             if key in results.keys():
-                return
-            else:
-                results[key] = alphas
+                print("Overwriting earlier version of this list of alphas - might be doing redundant work.")
+            results[key] = alphas
     except FileNotFoundError:   # What if the file is empty, and results.keys() isn't available? I think that will never happen though.
-        print("Caught FileNotFoundError.")
+        print(f"Caught FileNotFoundError. Writing to {centralized_alphas_file} for the first time.")
         results = {}
         results[key] = alphas
     with open(centralized_alphas_file,"w") as file:
         json.dump(results,file)
+
+def plotPredictedVsOptimalAlphaComparison(oae_model_name,stack_model_name,eval_datasets,save):
+    centralized_alphas_file = "./central_alphas.txt"
+    with open(centralized_alphas_file,"r") as file:
+        full_alphas_dict = json.loads(file.read())
+    for eval_dataset in eval_datasets:
+        optimalAlphas = full_alphas_dict[f"{oae_model_name}, {eval_dataset}"]
+        predictedAlphas = full_alphas_dict[f"{stack_model_name}, {eval_dataset}"]
+        plt.scatter(predictedAlphas,optimalAlphas)
+        plt.xlabel("Predicted Alphas")
+        plt.ylabel("Optimal Alphas")
+        plt.title("Predicted vs. Optimal Alphas")
+        plt.savefig(os.path.join(save, f'alpha_comparison_{eval_dataset}.png'))
+        plt.clf()
 
 if __name__ == "__main__":
     # print("\n\nMAKE SURE THAT YOUR TRAIN LOADER IS DETERMINISTIC! (Otherwise logit ensembling won't work at all.)\n\n")
