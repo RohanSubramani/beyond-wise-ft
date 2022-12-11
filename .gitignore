@@ -3,3 +3,4 @@ __pycache__
 /data
 /cache
 /wandb
+central_alphas.txt
